@@ -1,0 +1,477 @@
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_jwt_key_12345';
+
+function requireAuth(user: any) {
+  if (!user) throw new Error('Not authenticated');
+}
+
+function requireRole(user: any, ...roles: string[]) {
+  requireAuth(user);
+  if (!roles.includes(user.role)) throw new Error('Not authorized');
+}
+
+export const resolvers = {
+  Query: {
+    me: async (_: any, __: any, { prisma, user }: any) => {
+      requireAuth(user);
+      return prisma.user.findUnique({ where: { id: user.id } });
+    },
+    users: async (_: any, __: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      return prisma.user.findMany();
+    },
+
+    products: async (_: any, { search, categoryId, status }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const where: any = {};
+      if (search) where.OR = [
+        { name: { contains: search } },
+        { sku: { contains: search } },
+        { barcode: { contains: search } },
+      ];
+      if (categoryId) where.categoryId = categoryId;
+      if (status) where.status = status;
+      const products = await prisma.product.findMany({
+        where,
+        include: { category: true, supplier: true, saleItems: true },
+      });
+      return products.map((p: any) => ({
+        ...p,
+        profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString(),
+      }));
+    },
+
+    product: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const p = await prisma.product.findUnique({
+        where: { id },
+        include: { category: true, supplier: true, saleItems: true },
+      });
+      if (!p) throw new Error('Product not found');
+      return {
+        ...p,
+        profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString(),
+      };
+    },
+
+    categories: async (_: any, __: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const cats = await prisma.category.findMany({ include: { _count: { select: { products: true } } } });
+      return cats.map((c: any) => ({ ...c, productCount: c._count.products }));
+    },
+
+    suppliers: async (_: any, __: any, { prisma, user }: any) => {
+      requireAuth(user);
+      return prisma.supplier.findMany();
+    },
+    supplier: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      return prisma.supplier.findUnique({ where: { id } });
+    },
+
+    customers: async (_: any, __: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const customers = await prisma.customer.findMany({
+        include: { sales: { include: { items: true } } },
+      });
+      return customers.map((c: any) => ({
+        ...c,
+        createdAt: c.createdAt.toISOString(),
+        totalSpent: c.sales.reduce((sum: number, s: any) => sum + s.totalAmount, 0),
+        purchaseCount: c.sales.length,
+      }));
+    },
+    customer: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const c = await prisma.customer.findUnique({
+        where: { id },
+        include: {
+          sales: {
+            include: { items: { include: { product: true } } },
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+      if (!c) throw new Error('Customer not found');
+      return {
+        ...c,
+        createdAt: c.createdAt.toISOString(),
+        totalSpent: c.sales.reduce((sum: number, s: any) => sum + s.totalAmount, 0),
+        purchaseCount: c.sales.length,
+        sales: c.sales.map((s: any) => ({ ...s, createdAt: s.createdAt.toISOString() })),
+      };
+    },
+
+    sales: async (_: any, { startDate, endDate, customerId }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const where: any = {};
+      if (startDate) where.createdAt = { gte: new Date(startDate) };
+      if (endDate) where.createdAt = { ...(where.createdAt || {}), lte: new Date(endDate) };
+      if (customerId) where.customerId = customerId;
+      const sales = await prisma.sale.findMany({
+        where, orderBy: { createdAt: 'desc' },
+        include: { items: { include: { product: true } }, customer: true, user: true, returns: true },
+      });
+      return sales.map((s: any) => ({ ...s, createdAt: s.createdAt.toISOString() }));
+    },
+
+    sale: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const s = await prisma.sale.findUnique({
+        where: { id },
+        include: { items: { include: { product: true } }, customer: true, user: true },
+      });
+      if (!s) throw new Error('Sale not found');
+      return { ...s, createdAt: s.createdAt.toISOString() };
+    },
+
+    transactions: async (_: any, { productId }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const where: any = {};
+      if (productId) where.productId = productId;
+      const txns = await prisma.transaction.findMany({ where, orderBy: { createdAt: 'desc' }, include: { product: true } });
+      return txns.map((t: any) => ({ ...t, createdAt: t.createdAt.toISOString() }));
+    },
+
+    activityLogs: async (_: any, __: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const logs = await prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 50, include: { user: true } });
+      return logs.map((l: any) => ({ ...l, createdAt: l.createdAt.toISOString() }));
+    },
+
+    dashboardStats: async (_: any, __: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const [products, categories, suppliers, customers, todaySalesAgg, monthlySales] = await Promise.all([
+        prisma.product.findMany(),
+        prisma.category.count(),
+        prisma.supplier.count(),
+        prisma.customer.count(),
+        prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfDay } } }),
+        prisma.sale.findMany({ where: { createdAt: { gte: startOfMonth } }, include: { items: { include: { product: true } } } }),
+      ]);
+
+      const inventoryValue = products.reduce((sum: number, p: any) => sum + p.costPrice * p.stock, 0);
+      const monthlyRevenue = monthlySales.reduce((sum: number, s: any) => sum + s.totalAmount, 0);
+      const monthlyProfit = monthlySales.reduce((sum: number, s: any) => {
+        return sum + s.items.reduce((isum: number, item: any) => isum + (item.price - item.product.costPrice) * item.quantity, 0);
+      }, 0);
+      const lowStockCount = products.filter((p: any) => p.stock > 0 && p.stock <= p.minStockLevel).length;
+      const outOfStockCount = products.filter((p: any) => p.stock === 0).length;
+
+      return {
+        totalProducts: products.length,
+        totalCategories: categories,
+        totalSuppliers: suppliers,
+        totalCustomers: customers,
+        inventoryValue,
+        todaySales: todaySalesAgg._sum.totalAmount || 0,
+        monthlyRevenue,
+        monthlyProfit,
+        lowStockCount,
+        outOfStockCount,
+      };
+    },
+
+    lowStockProducts: async (_: any, __: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const all = await prisma.product.findMany({
+        include: { category: true, supplier: true, saleItems: true },
+      });
+      return all
+        .filter((p: any) => p.stock <= p.minStockLevel)
+        .map((p: any) => ({
+          ...p,
+          createdAt: p.createdAt.toISOString(),
+          updatedAt: p.updatedAt.toISOString(),
+          profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100,
+        }));
+    },
+
+    monthlySalesByDay: async (_: any, { year, month, startDate, endDate }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      let start: Date;
+      let end: Date;
+
+      if (startDate || endDate) {
+        // Use explicit date range when provided (from Reports filter)
+        const now = new Date();
+        start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+        end   = endDate   ? new Date(endDate + 'T23:59:59') : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      } else {
+        // Default: current calendar month
+        const now = new Date();
+        const y = year ?? now.getFullYear();
+        const m = month ?? now.getMonth(); // 0-indexed
+        start = new Date(y, m, 1);
+        end   = new Date(y, m + 1, 0, 23, 59, 59);
+      }
+
+      const sales = await prisma.sale.findMany({
+        where: { createdAt: { gte: start, lte: end } },
+        include: { items: { include: { product: true } } },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const byDay: Record<string, { revenue: number; profit: number; count: number }> = {};
+      for (const s of sales) {
+        const dateKey = s.createdAt.toISOString().slice(0, 10);
+        if (!byDay[dateKey]) byDay[dateKey] = { revenue: 0, profit: 0, count: 0 };
+        byDay[dateKey].revenue += s.totalAmount;
+        byDay[dateKey].count += 1;
+        byDay[dateKey].profit += s.items.reduce(
+          (sum: number, item: any) => sum + (item.price - item.product.costPrice) * item.quantity,
+          0
+        );
+      }
+
+      return Object.entries(byDay).map(([date, v]) => ({ date, ...v }));
+    },
+
+    salesByCategory: async (_: any, __: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const saleItems = await prisma.saleItem.findMany({
+        include: { product: { include: { category: true } } },
+      });
+
+      const byCategory: Record<string, { name: string; revenue: number; count: number }> = {};
+      for (const item of saleItems) {
+        const catName = item.product?.category?.name ?? 'Uncategorized';
+        if (!byCategory[catName]) byCategory[catName] = { name: catName, revenue: 0, count: 0 };
+        byCategory[catName].revenue += item.price * item.quantity;
+        byCategory[catName].count += item.quantity;
+      }
+
+      return Object.values(byCategory).sort((a, b) => b.revenue - a.revenue);
+    },
+  },
+
+  Mutation: {
+    register: async (_: any, { name, email, password, role }: any, { prisma }: any) => {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await prisma.user.create({ data: { name, email, password: hashedPassword, role: role || 'CASHIER' } });
+      const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+      return { token, user: { ...user, createdAt: user.createdAt.toISOString() } };
+    },
+
+    login: async (_: any, { email, password }: any, { prisma }: any) => {
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (!user) throw new Error('Invalid credentials');
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) throw new Error('Invalid credentials');
+      const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+      return { token, user: { ...user, createdAt: user.createdAt.toISOString() } };
+    },
+
+    createCategory: async (_: any, { name, description }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      return prisma.category.create({ data: { name, description } });
+    },
+    updateCategory: async (_: any, { id, name, description }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      return prisma.category.update({ where: { id }, data: { name, description } });
+    },
+    deleteCategory: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      await prisma.category.delete({ where: { id } });
+      return true;
+    },
+
+    createSupplier: async (_: any, args: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      return prisma.supplier.create({ data: args });
+    },
+    updateSupplier: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      return prisma.supplier.update({ where: { id }, data });
+    },
+    deleteSupplier: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      await prisma.supplier.delete({ where: { id } });
+      return true;
+    },
+
+    createCustomer: async (_: any, args: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const c = await prisma.customer.create({ data: args });
+      return { ...c, createdAt: c.createdAt.toISOString(), totalSpent: 0, purchaseCount: 0 };
+    },
+    updateCustomer: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const c = await prisma.customer.update({ where: { id }, data });
+      return { ...c, createdAt: c.createdAt.toISOString(), totalSpent: 0, purchaseCount: 0 };
+    },
+    deleteCustomer: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      await prisma.customer.delete({ where: { id } });
+      return true;
+    },
+
+    createProduct: async (_: any, args: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const p = await prisma.product.create({
+        data: { ...args, stock: args.stock ?? 0, minStockLevel: args.minStockLevel ?? 10, status: args.status ?? 'ACTIVE' },
+        include: { category: true, supplier: true, saleItems: true },
+      });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'PRODUCT_CREATED', details: `Created product: ${p.name}` } });
+      return { ...p, profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() };
+    },
+
+    updateProduct: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const p = await prisma.product.update({ where: { id }, data, include: { category: true, supplier: true, saleItems: true } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'PRODUCT_UPDATED', details: `Updated product: ${p.name}` } });
+      return { ...p, profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() };
+    },
+
+    deleteProduct: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      const p = await prisma.product.findUnique({ where: { id } });
+      await prisma.product.delete({ where: { id } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'PRODUCT_DELETED', details: `Deleted product: ${p?.name}` } });
+      return true;
+    },
+
+    adjustStock: async (_: any, { productId, quantity, type, notes }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const product = await prisma.product.findUnique({ where: { id: productId } });
+      if (!product) throw new Error('Product not found');
+
+      let newStock = product.stock;
+      if (type === 'IN') newStock += quantity;
+      else if (type === 'OUT') newStock -= quantity;
+      else if (type === 'ADJUSTMENT') newStock = quantity;
+
+      if (newStock < 0) throw new Error('Insufficient stock');
+
+      await prisma.product.update({ where: { id: productId }, data: { stock: newStock } });
+      const txn = await prisma.transaction.create({
+        data: { productId, quantity, type, notes, userId: user.id },
+        include: { product: true },
+      });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'STOCK_ADJUSTED', details: `${type} ${quantity} units of ${product.name}` } });
+      return { ...txn, createdAt: txn.createdAt.toISOString() };
+    },
+
+    createSale: async (_: any, { customerId, items }: any, { prisma, user }: any) => {
+      requireAuth(user);
+
+      // Validate stock
+      for (const item of items) {
+        const product = await prisma.product.findUnique({ where: { id: item.productId } });
+        if (!product) throw new Error(`Product ${item.productId} not found`);
+        if (product.stock < item.quantity) throw new Error(`Insufficient stock for ${product.name}`);
+      }
+
+      const invoiceNo = `INV-${Date.now()}`;
+      const totalAmount = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+
+      const sale = await prisma.sale.create({
+        data: {
+          invoiceNo,
+          totalAmount,
+          customerId: customerId || null,
+          userId: user.id,
+          items: { create: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity, price: i.price })) },
+        },
+        include: { items: { include: { product: true } }, customer: true, user: true, returns: true },
+      });
+
+      for (const item of items) {
+        await prisma.product.update({ where: { id: item.productId }, data: { stock: { decrement: item.quantity } } });
+        await prisma.transaction.create({ data: { productId: item.productId, quantity: item.quantity, type: 'OUT', notes: `Sale ${invoiceNo}`, userId: user.id } });
+      }
+
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'SALE_COMPLETED', details: `Sale ${invoiceNo} for $${totalAmount}` } });
+
+      return { ...sale, createdAt: sale.createdAt.toISOString() };
+    },
+
+    returnSale: async (_: any, { saleId, reason }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+
+      const sale = await prisma.sale.findUnique({
+        where: { id: saleId },
+        include: { items: { include: { product: true } }, returns: true },
+      });
+      if (!sale) throw new Error('Sale not found');
+
+      const alreadyReturned = sale.returns.length > 0;
+      if (alreadyReturned) throw new Error('This sale has already been returned');
+
+      // Restore stock for each item
+      for (const item of sale.items) {
+        await prisma.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+        await prisma.transaction.create({
+          data: {
+            productId: item.productId,
+            quantity: item.quantity,
+            type: 'IN',
+            notes: `Return of ${sale.invoiceNo}`,
+            userId: user.id,
+          },
+        });
+      }
+
+      const saleReturn = await prisma.saleReturn.create({
+        data: {
+          saleId: sale.id,
+          refundAmount: sale.totalAmount,
+          reason: reason || null,
+          userId: user.id,
+        },
+        include: { sale: true, user: true },
+      });
+
+      await prisma.activityLog.create({
+        data: {
+          userId: user.id,
+          action: 'SALE_RETURNED',
+          details: `Returned ${sale.invoiceNo} — refund $${sale.totalAmount}`,
+        },
+      });
+
+      return { ...saleReturn, createdAt: saleReturn.createdAt.toISOString() };
+    },
+
+    createUser: async (_: any, { name, email, password, role }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const newUser = await prisma.user.create({
+        data: { name, email, password: hashedPassword, role },
+      });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_CREATED', details: `Created user: ${name} (${role})` } });
+      return { ...newUser, createdAt: newUser.createdAt.toISOString() };
+    },
+
+    updateUserRole: async (_: any, { id, role }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      if (id === user.id) throw new Error('You cannot change your own role');
+      const updated = await prisma.user.update({ where: { id }, data: { role } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_ROLE_CHANGED', details: `Changed role of user ${updated.name} to ${role}` } });
+      return { ...updated, createdAt: updated.createdAt.toISOString() };
+    },
+
+    deleteUser: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      if (id === user.id) throw new Error('You cannot delete yourself');
+      const target = await prisma.user.findUnique({ where: { id } });
+      if (!target) throw new Error('User not found');
+      await prisma.user.delete({ where: { id } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_DELETED', details: `Deleted user: ${target.name}` } });
+      return true;
+    },
+  },
+};

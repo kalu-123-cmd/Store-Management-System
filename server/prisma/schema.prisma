@@ -1,0 +1,124 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String        @id @default(uuid())
+  name      String
+  email     String        @unique
+  password  String
+  role      String        @default("CASHIER")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  sales     Sale[]
+  returns   SaleReturn[]
+  logs      ActivityLog[]
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  products    Product[]
+}
+
+model Supplier {
+  id          String    @id @default(uuid())
+  name        String
+  contactName String?
+  email       String?
+  phone       String?
+  address     String?
+  products    Product[]
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  sales     Sale[]
+  createdAt DateTime @default(now())
+}
+
+model Product {
+  id            String    @id @default(uuid())
+  name          String
+  sku           String    @unique
+  barcode       String?   @unique
+  description   String?
+  imageUrl      String?
+  costPrice     Float
+  sellingPrice  Float
+  stock         Int       @default(0)
+  minStockLevel Int       @default(10)
+  status        String    @default("ACTIVE")
+  categoryId    String
+  category      Category  @relation(fields: [categoryId], references: [id])
+  supplierId    String?
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  transactions  Transaction[]
+  saleItems     SaleItem[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  type        String   // "IN", "OUT", "ADJUSTMENT"
+  notes       String?
+  userId      String?
+  createdAt   DateTime @default(now())
+}
+
+model Sale {
+  id          String       @id @default(uuid())
+  invoiceNo   String       @unique
+  totalAmount Float
+  customerId  String?
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  items       SaleItem[]
+  returns     SaleReturn[]
+  createdAt   DateTime     @default(now())
+}
+
+model SaleItem {
+  id        String  @id @default(uuid())
+  saleId    String
+  sale      Sale    @relation(fields: [saleId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Float   // Price at the time of sale
+}
+
+model SaleReturn {
+  id          String   @id @default(uuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id])
+  refundAmount Float
+  reason      String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+}
