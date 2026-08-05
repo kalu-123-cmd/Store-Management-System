@@ -8,6 +8,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
+import { fmt } from '../lib/currency';
 
 // ── GraphQL ──────────────────────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ function HistoryDrawer({ customerId, onClose }: { customerId: string; onClose: (
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Orders</p>
             </div>
             <div className="p-3 text-center">
-              <p className="text-lg font-bold text-emerald-500">${(customer.totalSpent || 0).toFixed(2)}</p>
+              <p className="text-lg font-bold text-emerald-500">{fmt(customer.totalSpent || 0)}</p>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Total Spent</p>
             </div>
             <div className="p-3 text-center">
@@ -233,7 +234,7 @@ function HistoryDrawer({ customerId, onClose }: { customerId: string; onClose: (
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="font-bold text-sm text-foreground">${sale.totalAmount.toFixed(2)}</span>
+                      <span className="font-bold text-sm text-foreground">{fmt(sale.totalAmount)}</span>
                       <motion.span
                         animate={{ rotate: expandedSale === sale.id ? 90 : 0 }}
                         transition={{ duration: 0.15 }}
@@ -266,13 +267,13 @@ function HistoryDrawer({ customerId, onClose }: { customerId: string; onClose: (
                                 )}
                               </div>
                               <span className="font-medium text-foreground shrink-0 ml-3">
-                                ${(item.price * item.quantity).toFixed(2)}
+                                {fmt(item.price * item.quantity)}
                               </span>
                             </div>
                           ))}
                           <div className="flex justify-between pt-2 border-t border-border text-sm font-semibold">
                             <span className="text-muted-foreground">Total</span>
-                            <span className="text-emerald-500">${sale.totalAmount.toFixed(2)}</span>
+                            <span className="text-emerald-500">{fmt(sale.totalAmount)}</span>
                           </div>
                         </div>
                       </motion.div>
@@ -417,7 +418,7 @@ export default function Customers() {
 
                     {/* Total spent */}
                     <td className="px-5 py-4">
-                      <span className="font-semibold text-emerald-500">${(c.totalSpent || 0).toFixed(2)}</span>
+                      <span className="font-semibold text-emerald-500">{fmt(c.totalSpent || 0)}</span>
                     </td>
 
                     {/* Joined */}

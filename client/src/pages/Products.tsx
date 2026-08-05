@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
 import {
   createColumnHelper, flexRender, getCoreRowModel, useReactTable,
-  getSortedRowModel, SortingState, getPaginationRowModel,
+  getSortedRowModel, getPaginationRowModel,
 } from '@tanstack/react-table';
+import type { SortingState } from '@tanstack/react-table';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, ArrowUpDown, Edit2, Trash2, AlertTriangle,
@@ -14,6 +15,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
+import { fmt } from '../lib/currency';
 
 // ── GraphQL ───────────────────────────────────────────────────────────────────
 
@@ -400,7 +402,7 @@ export default function Products() {
           Price <ArrowUpDown size={13} />
         </button>
       ),
-      cell: info => <span className="font-semibold">${info.getValue().toFixed(2)}</span>,
+      cell: info => <span className="font-semibold">{fmt(info.getValue())}</span>,
     }),
     columnHelper.accessor('profitMargin', {
       header: 'Margin',

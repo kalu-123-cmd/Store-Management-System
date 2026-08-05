@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
+import { fmt } from '../lib/currency';
 
 // ── GraphQL ───────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
   const handleReturn = async () => {
     try {
       await returnSale({ variables: { saleId: sale.id, reason: returnReason || null } });
-      success('Refund processed', `$${sale.totalAmount.toFixed(2)} refunded — stock restored.`);
+      success('Refund processed', `${fmt(sale.totalAmount)} refunded — stock restored.`);
       refetch(); onClose();
     } catch (e: any) { toastError('Return failed', e.message); }
   };
@@ -151,8 +152,8 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
                           {item.product?.sku && <p className="text-[10px] text-muted-foreground font-mono">{item.product.sku}</p>}
                         </td>
                         <td className="px-4 py-3 text-center text-muted-foreground">{item.quantity}</td>
-                        <td className="px-4 py-3 text-right text-muted-foreground">${item.price.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-foreground">${(item.price * item.quantity).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{fmt(item.price)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-foreground">{fmt(item.price * item.quantity)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -167,12 +168,12 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-border">
                   <span className="font-semibold text-foreground">Total Paid</span>
-                  <span className={`text-xl font-bold ${isReturned ? 'line-through text-muted-foreground' : 'text-primary'}`}>${sale.totalAmount.toFixed(2)}</span>
+                  <span className={`text-xl font-bold ${isReturned ? 'line-through text-muted-foreground' : 'text-primary'}`}>{fmt(sale.totalAmount)}</span>
                 </div>
                 {isReturned && (
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-destructive font-medium flex items-center gap-1.5"><RotateCcw size={13} /> Refunded</span>
-                    <span className="font-bold text-destructive">−${sale.returns[0].refundAmount.toFixed(2)}</span>
+                    <span className="font-bold text-destructive">−{fmt(sale.returns[0].refundAmount)}</span>
                   </div>
                 )}
               </div>
@@ -192,7 +193,7 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
                     <div className="flex items-center gap-2 text-sm font-medium text-destructive">
                       <AlertTriangle size={15} /> Confirm Full Return
                     </div>
-                    <p className="text-xs text-muted-foreground">This will refund ${sale.totalAmount.toFixed(2)} and restore all stock levels.</p>
+                    <p className="text-xs text-muted-foreground">This will refund {fmt(sale.totalAmount)} and restore all stock levels.</p>
                     <textarea value={returnReason} onChange={e => setReturnReason(e.target.value)}
                       placeholder="Reason for return (optional)..." rows={2}
                       className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-2 focus:ring-destructive outline-none resize-none" />
@@ -292,7 +293,7 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
       const result = await createSale({
         variables: { customerId: customerId || null, items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })) },
       });
-      success('Sale completed!', `Invoice: ${result.data.createSale.invoiceNo} — $${result.data.createSale.totalAmount.toFixed(2)}`);
+      success('Sale completed!', `Invoice: ${result.data.createSale.invoiceNo} — ${fmt(result.data.createSale.totalAmount)}`);
       setCart([]); setCustomerId(''); refetch(); onClose();
     } catch (e: any) { toastError('Sale failed', e.message); }
   };
@@ -336,7 +337,7 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
                     <div className="min-w-0">
                       <p className="font-medium text-foreground text-sm line-clamp-1">{p.name}</p>
                       <p className="text-xs text-muted-foreground">{p.sku} · {p.stock} left</p>
-                      <p className="text-sm font-bold text-primary">${p.sellingPrice.toFixed(2)}</p>
+                      <p className="text-sm font-bold text-primary">{fmt(p.sellingPrice)}</p>
                     </div>
                   </button>
                 ))}
@@ -366,7 +367,7 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
                         <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
                         <button onClick={() => updateQty(item.productId, item.quantity + 1)} className="w-6 h-6 border border-border rounded text-sm hover:bg-muted flex items-center justify-center">+</button>
                       </div>
-                      <span className="text-sm font-semibold text-foreground">${(item.price * item.quantity).toFixed(2)}</span>
+                      <span className="text-sm font-semibold text-foreground">{fmt(item.price * item.quantity)}</span>
                     </div>
                   </div>
                 ))}
@@ -374,7 +375,7 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
               <div className="p-4 border-t border-border">
                 <div className="flex justify-between items-center mb-4">
                   <span className="font-semibold text-foreground">Total</span>
-                  <span className="text-xl font-bold text-primary">${total.toFixed(2)}</span>
+                  <span className="text-xl font-bold text-primary">{fmt(total)}</span>
                 </div>
                 <button onClick={handleCheckout} disabled={loading || cart.length === 0}
                   className="w-full bg-primary text-primary-foreground py-2.5 rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
@@ -458,7 +459,7 @@ export default function Sales() {
                     <td className="px-5 py-4 text-muted-foreground">{s.items?.length} item{s.items?.length !== 1 ? 's' : ''}</td>
                     <td className="px-5 py-4">
                       <span className={`font-bold ${isReturned ? 'line-through text-muted-foreground' : 'text-emerald-500'}`}>
-                        ${s.totalAmount.toFixed(2)}
+                        {fmt(s.totalAmount)}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-xs text-muted-foreground">{new Date(s.createdAt).toLocaleString()}</td>

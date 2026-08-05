@@ -47,17 +47,14 @@ const GET_ACTIVITY = gql`
   }
 `;
 
+import { fmtCompact, fmt, fmtInt, CURRENCY_SYMBOL } from '../lib/currency';
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const PIE_COLORS = [
   'hsl(221,83%,53%)', 'hsl(142,71%,45%)', 'hsl(38,92%,50%)',
   'hsl(346,77%,49%)', 'hsl(270,70%,60%)', 'hsl(190,80%,45%)',
 ];
-
-const fmt = (n: number) =>
-  n >= 1000
-    ? `$${(n / 1000).toFixed(1)}k`
-    : `$${n.toFixed(2)}`;
 
 const actionColor: Record<string, string> = {
   SALE_COMPLETED:   'bg-emerald-500',
@@ -133,13 +130,13 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           title="Monthly Revenue"
-          value={`$${(stats?.monthlyRevenue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          value={`${fmt(stats?.monthlyRevenue || 0)}`}
           icon={<DollarSign size={20} className="text-primary" />}
           color="bg-primary/10" delay={0}
         />
         <KPICard
           title="Monthly Profit"
-          value={`$${(stats?.monthlyProfit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          value={`${fmt(stats?.monthlyProfit || 0)}`}
           icon={<TrendingUp size={20} className="text-emerald-500" />}
           color="bg-emerald-500/10" delay={0.07}
         />
@@ -162,13 +159,13 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           title="Today's Sales"
-          value={`$${(stats?.todaySales || 0).toFixed(2)}`}
+          value={`${fmt(stats?.todaySales || 0)}`}
           icon={<ShoppingCart size={20} className="text-sky-500" />}
           color="bg-sky-500/10" delay={0.28}
         />
         <KPICard
           title="Inventory Value"
-          value={`$${(stats?.inventoryValue || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
+          value={`${fmtInt(stats?.inventoryValue || 0)}`}
           icon={<BarChart2 size={20} className="text-indigo-500" />}
           color="bg-indigo-500/10" delay={0.35}
         />
@@ -222,9 +219,9 @@ export default function Dashboard() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                   <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={fmt} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={fmtCompact} />
                   <Tooltip
-                    formatter={(v: number) => [`$${v.toFixed(2)}`]}
+                    formatter={(v: number) => [fmt(v)]}
                     contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }}
                   />
                   <Area type="monotone" dataKey="revenue" name="Revenue" stroke="hsl(221,83%,53%)" strokeWidth={2.5} fillOpacity={1} fill="url(#gRev)" />
@@ -264,7 +261,7 @@ export default function Dashboard() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(v: number) => [`$${v.toFixed(2)}`]}
+                      formatter={(v: number) => [fmt(v)]}
                       contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }}
                     />
                   </PieChart>
@@ -277,7 +274,7 @@ export default function Dashboard() {
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
                       <span className="text-muted-foreground truncate max-w-[100px]">{c.name}</span>
                     </div>
-                    <span className="font-semibold text-foreground">${c.revenue.toFixed(0)}</span>
+                    <span className="font-semibold text-foreground">{fmtInt(c.revenue)}</span>
                   </div>
                 ))}
               </div>
@@ -309,7 +306,7 @@ export default function Dashboard() {
                   <p className="text-sm font-medium text-foreground font-mono">{s.invoiceNo}</p>
                   <p className="text-xs text-muted-foreground truncate">{s.customer?.name || 'Walk-in'} · {new Date(s.createdAt).toLocaleDateString()}</p>
                 </div>
-                <span className="text-sm font-bold text-emerald-500 shrink-0 ml-3">${s.totalAmount.toFixed(2)}</span>
+                <span className="text-sm font-bold text-emerald-500 shrink-0 ml-3">{fmt(s.totalAmount)}</span>
               </div>
             ))}
           </div>

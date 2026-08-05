@@ -6,6 +6,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
 import { FileDown, TrendingUp, Package, DollarSign, ShoppingCart, Percent } from 'lucide-react';
+import { fmt, fmtCompact, fmtInt } from '../lib/currency';
 import { useToast } from '../components/Toast';
 
 // ── GraphQL ──────────────────────────────────────────────────────────────────
@@ -206,16 +207,16 @@ export default function Reports() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
-          <StatCard label="Total Revenue"    value={`$${totalRevenue.toFixed(2)}`}           icon={<DollarSign size={16} className="text-primary" />}        color="bg-primary/10" />
+          <StatCard label="Total Revenue"    value={fmt(totalRevenue)}           icon={<DollarSign size={16} className="text-primary" />}        color="bg-primary/10" />
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 }}>
-          <StatCard label="Net Profit"       value={`$${totalProfit.toFixed(2)}`}            icon={<TrendingUp size={16} className="text-emerald-500" />}    color="bg-emerald-500/10" />
+          <StatCard label="Net Profit"       value={fmt(totalProfit)}            icon={<TrendingUp size={16} className="text-emerald-500" />}    color="bg-emerald-500/10" />
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
           <StatCard label="Profit Margin"    value={`${profitMargin.toFixed(1)}%`}           icon={<Percent size={16} className="text-violet-500" />}        color="bg-violet-500/10" />
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.21 }}>
-          <StatCard label="Inventory Value"  value={`$${inventoryValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`} icon={<Package size={16} className="text-amber-500" />} color="bg-amber-500/10" />
+          <StatCard label="Inventory Value"  value={fmtInt(inventoryValue)} icon={<Package size={16} className="text-amber-500" />} color="bg-amber-500/10" />
         </motion.div>
       </div>
 
@@ -254,8 +255,8 @@ export default function Reports() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                   <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
                   <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false}
-                    tickFormatter={v => `$${v}`} />
-                  <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`]} contentStyle={tooltipStyle} />
+                    tickFormatter={fmtCompact} />
+                  <Tooltip formatter={(v: number) => [fmt(v)]} contentStyle={tooltipStyle} />
                   <Line type="monotone" dataKey="revenue" name="Revenue" stroke="hsl(221,83%,53%)"
                     strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
                   <Line type="monotone" dataKey="profit" name="Profit" stroke="hsl(142,71%,45%)"
@@ -286,7 +287,7 @@ export default function Reports() {
                         <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`]} contentStyle={tooltipStyle} />
+                    <Tooltip formatter={(v: number) => [fmt(v)]} contentStyle={tooltipStyle} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -298,7 +299,7 @@ export default function Reports() {
                         style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
                       <span className="text-muted-foreground">{c.name}</span>
                     </div>
-                    <span className="font-semibold text-foreground">${c.revenue.toFixed(0)}</span>
+                    <span className="font-semibold text-foreground">{fmtInt(c.revenue)}</span>
                   </div>
                 ))}
               </div>
@@ -323,8 +324,8 @@ export default function Reports() {
                 <XAxis dataKey="name" angle={-30} textAnchor="end"
                   stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} interval={0} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false}
-                  tickFormatter={v => `$${v}`} />
-                <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`]} contentStyle={tooltipStyle} />
+                  tickFormatter={fmtCompact} />
+                <Tooltip formatter={(v: number) => [fmt(v)]} contentStyle={tooltipStyle} />
                 <Bar dataKey="revenue" name="Revenue" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -369,8 +370,8 @@ export default function Reports() {
                   <td className="px-5 py-3.5">
                     <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">{p.cat}</span>
                   </td>
-                  <td className="px-5 py-3.5 text-muted-foreground">${p.cost.toFixed(2)}</td>
-                  <td className="px-5 py-3.5 font-medium">${p.sell.toFixed(2)}</td>
+                  <td className="px-5 py-3.5 text-muted-foreground">{fmt(p.cost)}</td>
+                  <td className="px-5 py-3.5 font-medium">{fmt(p.sell)}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2">
                       <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">

@@ -9,6 +9,7 @@ export default defineConfig({
       '@apollo/client/link/context',
       '@apollo/client/link/error',
       'graphql',
+      '@tanstack/react-table',
     ],
   },
 })

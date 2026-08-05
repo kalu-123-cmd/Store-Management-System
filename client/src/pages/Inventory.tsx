@@ -5,6 +5,7 @@ import { ArrowUpCircle, ArrowDownCircle, SlidersHorizontal, X } from 'lucide-rea
 import { useForm } from 'react-hook-form';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
+import { fmt, fmtInt } from '../lib/currency';
 
 const GET_INVENTORY = gql`
   query GetInventory {
@@ -116,7 +117,7 @@ export default function Inventory() {
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-card border border-border rounded-xl p-5">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Inventory Value</p>
-          <p className="text-xl font-bold text-foreground">${totalValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+          <p className="text-xl font-bold text-foreground">{fmtInt(totalValue)}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-5">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Products</p>
@@ -156,8 +157,8 @@ export default function Inventory() {
                     <span className={`font-bold ${p.stock === 0 ? 'text-destructive' : p.stock <= p.minStockLevel ? 'text-amber-500' : 'text-emerald-500'}`}>{p.stock}</span>
                   </td>
                   <td className="px-5 py-3.5 text-muted-foreground">{p.minStockLevel}</td>
-                  <td className="px-5 py-3.5">${p.costPrice.toFixed(2)}</td>
-                  <td className="px-5 py-3.5 font-medium">${(p.costPrice * p.stock).toFixed(2)}</td>
+                  <td className="px-5 py-3.5">{fmt(p.costPrice)}</td>
+                  <td className="px-5 py-3.5 font-medium">{fmt(p.costPrice * p.stock)}</td>
                   <td className="px-5 py-3.5">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${p.stock === 0 ? 'bg-destructive/10 text-destructive' : p.stock <= p.minStockLevel ? 'bg-amber-500/10 text-amber-600' : 'bg-emerald-500/10 text-emerald-600'}`}>
                       {p.stock === 0 ? 'Out of Stock' : p.stock <= p.minStockLevel ? 'Low Stock' : 'In Stock'}
