@@ -8,7 +8,7 @@ import type { SortingState } from '@tanstack/react-table';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, ArrowUpDown, Edit2, Trash2, AlertTriangle,
-  X, Package, ChevronLeft, ChevronRight, Filter, ImageIcon,
+  X, Package, ChevronLeft, ChevronRight, Filter, ImageIcon, Upload,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -76,7 +76,7 @@ const productSchema = z.object({
   sku:           z.string().min(2, 'SKU must be at least 2 characters'),
   barcode:       z.string().optional(),
   description:   z.string().optional(),
-  imageUrl:      z.string().url('Must be a valid URL').optional().or(z.literal('')),
+  imageUrl:      z.string().optional().or(z.literal('')),
   costPrice:     z.number({ invalid_type_error: 'Enter a valid price' }).positive('Must be positive'),
   sellingPrice:  z.number({ invalid_type_error: 'Enter a valid price' }).positive('Must be positive'),
   categoryId:    z.string().min(1, 'Select a category'),
@@ -103,6 +103,8 @@ const columnHelper = createColumnHelper<Product>();
 function ProductModal({ open, onClose, categories, suppliers, refetch, editProduct }: any) {
   const { success, error: toastError } = useToast();
   const [imagePreview, setImagePreview] = useState('');
+  const [imageTab, setImageTab] = useState<'url' | 'upload'>('url');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const defaultValues = editProduct
     ? {
@@ -117,19 +119,25 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
       }
     : { stock: 0, minStockLevel: 10, status: 'ACTIVE', imageUrl: '' };
 
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ProductForm>({
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
     defaultValues,
   });
 
   const watchedImageUrl = watch('imageUrl');
+
+  // Update preview whenever imageUrl changes
   useEffect(() => {
-    if (watchedImageUrl && watchedImageUrl.startsWith('http')) setImagePreview(watchedImageUrl);
-    else setImagePreview('');
+    if (watchedImageUrl && (watchedImageUrl.startsWith('http') || watchedImageUrl.startsWith('data:'))) {
+      setImagePreview(watchedImageUrl);
+    } else {
+      setImagePreview('');
+    }
   }, [watchedImageUrl]);
 
+  // Reset form when editProduct changes
   useEffect(() => {
-    reset(editProduct
+    const vals = editProduct
       ? {
           name: editProduct.name, sku: editProduct.sku,
           barcode: editProduct.barcode || '', description: editProduct.description || '',
@@ -139,9 +147,34 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
           supplierId: editProduct.supplier?.id || '',
           minStockLevel: editProduct.minStockLevel, status: editProduct.status,
         }
-      : { stock: 0, minStockLevel: 10, status: 'ACTIVE', imageUrl: '' }
-    );
+      : { stock: 0, minStockLevel: 10, status: 'ACTIVE', imageUrl: '' };
+    reset(vals);
+    setImagePreview(editProduct?.imageUrl || '');
+    setImageTab('url');
   }, [editProduct, reset]);
+
+  // Handle local file → base64
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toastError('Image too large', 'Please choose an image under 2 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      setValue('imageUrl', base64, { shouldValidate: true });
+      setImagePreview(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearImage = () => {
+    setValue('imageUrl', '', { shouldValidate: true });
+    setImagePreview('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const [createProduct, { loading: creating }] = useMutation(CREATE_PRODUCT);
   const [updateProduct, { loading: updating }] = useMutation(UPDATE_PRODUCT);
@@ -228,7 +261,7 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
               </div>
             </div>
 
-            {/* Stock + Min (stock only on create) */}
+            {/* Stock + Min */}
             <div className="grid grid-cols-2 gap-4">
               {!editProduct && (
                 <div>
@@ -255,23 +288,73 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
               </div>
             )}
 
-            {/* Image URL */}
+            {/* ── Product Image ── */}
             <div>
-              <label className={lc}>Product Image URL</label>
+              <label className={lc}>Product Image</label>
+
+              {/* Tab toggle */}
+              <div className="flex gap-1 bg-muted/40 p-1 rounded-lg w-fit mb-3">
+                <button type="button" onClick={() => setImageTab('url')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${imageTab === 'url' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                  URL
+                </button>
+                <button type="button" onClick={() => setImageTab('upload')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${imageTab === 'upload' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                  Upload File
+                </button>
+              </div>
+
               <div className="flex gap-3 items-start">
                 <div className="flex-1">
-                  <input {...register('imageUrl')} placeholder="https://example.com/image.jpg" className={ic} />
-                  {errors.imageUrl && <p className={ec}>{errors.imageUrl.message}</p>}
-                  <p className="text-xs text-muted-foreground mt-1">Paste a direct link to the product photo</p>
+                  {imageTab === 'url' ? (
+                    <>
+                      <input {...register('imageUrl')}
+                        placeholder="https://example.com/product.jpg"
+                        className={ic} />
+                      <p className="text-xs text-muted-foreground mt-1">Paste a direct image link</p>
+                    </>
+                  ) : (
+                    <>
+                      {/* Hidden file input */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        onChange={handleFileChange}
+                        className="hidden"
+                        id="product-image-file"
+                      />
+                      {/* Custom file button */}
+                      <label htmlFor="product-image-file"
+                        className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary cursor-pointer transition-colors w-full justify-center">
+                        <Upload size={15} />
+                        {imagePreview && watchedImageUrl?.startsWith('data:')
+                          ? 'Change image'
+                          : 'Choose image (PNG, JPG, WebP — max 2 MB)'}
+                      </label>
+                      <p className="text-xs text-muted-foreground mt-1">Stored as base64 in the database</p>
+                    </>
+                  )}
                 </div>
-                {imagePreview ? (
-                  <img src={imagePreview} alt="Preview" onError={() => setImagePreview('')}
-                    className="w-14 h-14 rounded-lg object-cover border border-border shrink-0" />
-                ) : (
-                  <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center text-muted-foreground shrink-0 border border-border">
-                    <ImageIcon size={20} />
-                  </div>
-                )}
+
+                {/* Preview + clear */}
+                <div className="relative shrink-0">
+                  {imagePreview ? (
+                    <>
+                      <img src={imagePreview} alt="Preview"
+                        onError={() => setImagePreview('')}
+                        className="w-16 h-16 rounded-lg object-cover border border-border" />
+                      <button type="button" onClick={clearImage}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center shadow-md hover:bg-destructive/90 transition-colors">
+                        <X size={10} />
+                      </button>
+                    </>
+                  ) : (
+                    <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border border-border">
+                      <ImageIcon size={22} />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
