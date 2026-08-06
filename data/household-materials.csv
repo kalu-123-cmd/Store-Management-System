@@ -1,0 +1,31 @@
+name,sku,stock,value,status
+Plastic Bucket,INV-001,45,4050.00,OK
+Plastic Basin,INV-002,38,3040.00,OK
+Broom,INV-003,25,1625.00,OK
+Mop,INV-004,15,2100.00,OK
+Soap,INV-005,60,3900.00,OK
+Laundry Detergent,INV-006,30,8400.00,OK
+Cooking Oil (1L),INV-007,22,6160.00,OK
+Sugar (1kg),INV-008,40,4400.00,OK
+Salt (1kg),INV-009,55,1925.00,OK
+Teff Flour (1kg),INV-010,18,2880.00,OK
+Berbere Spice (500g),INV-011,12,1560.00,Low Stock
+Shiro Flour (1kg),INV-012,28,3360.00,OK
+Coffee Beans (1kg),INV-013,16,9920.00,OK
+Charcoal Bag,INV-014,9,3150.00,Low Stock
+Matches,INV-015,75,900.00,OK
+Candle Pack,INV-016,20,1100.00,OK
+Notebook,INV-017,35,2275.00,OK
+Ballpoint Pen,INV-018,80,1200.00,OK
+Exercise Book,INV-019,50,2250.00,OK
+A4 Paper (500 Sheets),INV-020,12,5760.00,Low Stock
+Plastic Chair,INV-021,14,8680.00,OK
+Plastic Table,INV-022,8,10800.00,Low Stock
+Steel Cup,INV-023,30,2250.00,OK
+Steel Plate,INV-024,25,2750.00,OK
+Aluminum Pot,INV-025,10,9500.00,Low Stock
+Jebena Coffee Pot,INV-026,7,4340.00,Low Stock
+Coffee Cups Set,INV-027,18,8640.00,OK
+Water Jerrycan (20L),INV-028,24,8400.00,OK
+Rope (10m),INV-029,32,3200.00,OK
+Flashlight,INV-030,11,3300.00,Low Stock

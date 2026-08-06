@@ -122,3 +122,22 @@ model ActivityLog {
   ipAddress String?
   createdAt DateTime @default(now())
 }
+
+model TraditionalItem {
+  id              String   @id @default(uuid())
+  name            String
+  amharicName     String?
+  region          String
+  material        String?
+  category        String   // e.g. Clothing, Jewelry, Pottery, Weaving, Instrument
+  description     String?
+  culturalNote    String?
+  imageUrl        String?
+  costPrice       Float    @default(0)
+  sellingPrice    Float    @default(0)
+  stock           Int      @default(0)
+  minStockLevel   Int      @default(5)
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

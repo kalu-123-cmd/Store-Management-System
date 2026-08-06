@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog } from 'lucide-react';
+import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
@@ -19,6 +19,11 @@ const navItems = [
 // Admin-only nav items shown below a divider
 const adminItems = [
   { name: 'Users', path: '/users', icon: <UserCog size={18} /> },
+];
+
+// Ethiopian section
+const ethiopianItems = [
+  { name: 'Traditional Items', path: '/traditional', icon: <Star size={18} /> },
 ];
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -69,6 +74,18 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 
       <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
         {navItems.map(item => <NavLink key={item.path} item={item} />)}
+
+        {/* Ethiopia section */}
+        <div className="my-2 border-t border-border" />
+        <p className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+          <span className="flex gap-0.5">
+            <span className="w-1.5 h-2.5 bg-green-600 rounded-sm inline-block" />
+            <span className="w-1.5 h-2.5 bg-yellow-400 rounded-sm inline-block" />
+            <span className="w-1.5 h-2.5 bg-red-600 rounded-sm inline-block" />
+          </span>
+          Ethiopia
+        </p>
+        {ethiopianItems.map(item => <NavLink key={item.path} item={item} />)}
 
         {/* Admin-only section */}
         {isAdmin && (

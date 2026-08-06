@@ -12,6 +12,18 @@ function requireRole(user: any, ...roles: string[]) {
   if (!roles.includes(user.role)) throw new Error('Not authorized');
 }
 
+// ── Helper: map TraditionalItem DB record to GraphQL type ──────────────────
+function mapItem(item: any) {
+  return {
+    ...item,
+    profitMargin: item.sellingPrice > 0
+      ? ((item.sellingPrice - item.costPrice) / item.sellingPrice) * 100
+      : 0,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  };
+}
+
 export const resolvers = {
   Query: {
     me: async (_: any, __: any, { prisma, user }: any) => {
@@ -253,6 +265,30 @@ export const resolvers = {
 
       return Object.values(byCategory).sort((a, b) => b.revenue - a.revenue);
     },
+
+    // ── TraditionalItem queries ─────────────────────────────────────────────
+
+    traditionalItems: async (_: any, { search, category, region }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const where: any = {};
+      if (category) where.category = category;
+      if (region)   where.region   = { contains: region };
+      if (search)   where.OR = [
+        { name:         { contains: search } },
+        { amharicName:  { contains: search } },
+        { region:       { contains: search } },
+        { material:     { contains: search } },
+      ];
+      const items = await prisma.traditionalItem.findMany({ where, orderBy: { name: 'asc' } });
+      return items.map(mapItem);
+    },
+
+    traditionalItem: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const item = await prisma.traditionalItem.findUnique({ where: { id } });
+      if (!item) throw new Error('Item not found');
+      return mapItem(item);
+    },
   },
 
   Mutation: {
@@ -472,6 +508,50 @@ export const resolvers = {
       await prisma.user.delete({ where: { id } });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_DELETED', details: `Deleted user: ${target.name}` } });
       return true;
+    },
+
+    // ── TraditionalItem mutations ──────────────────────────────────────────
+
+    createTraditionalItem: async (_: any, args: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const item = await prisma.traditionalItem.create({
+        data: {
+          ...args,
+          stock: args.stock ?? 0,
+          minStockLevel: args.minStockLevel ?? 5,
+          status: args.status ?? 'ACTIVE',
+        },
+      });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'TRADITIONAL_ITEM_CREATED', details: `Created traditional item: ${item.name}` } });
+      return mapItem(item);
+    },
+
+    updateTraditionalItem: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const item = await prisma.traditionalItem.update({ where: { id }, data });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'TRADITIONAL_ITEM_UPDATED', details: `Updated traditional item: ${item.name}` } });
+      return mapItem(item);
+    },
+
+    deleteTraditionalItem: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      const item = await prisma.traditionalItem.findUnique({ where: { id } });
+      await prisma.traditionalItem.delete({ where: { id } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'TRADITIONAL_ITEM_DELETED', details: `Deleted traditional item: ${item?.name}` } });
+      return true;
+    },
+
+    adjustTraditionalStock: async (_: any, { id, quantity, type, notes }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const item = await prisma.traditionalItem.findUnique({ where: { id } });
+      if (!item) throw new Error('Item not found');
+      let newStock = item.stock;
+      if (type === 'IN') newStock += quantity;
+      else if (type === 'OUT') newStock -= quantity;
+      else if (type === 'SET') newStock = quantity;
+      if (newStock < 0) throw new Error('Insufficient stock');
+      const updated = await prisma.traditionalItem.update({ where: { id }, data: { stock: newStock } });
+      return mapItem(updated);
     },
   },
 };

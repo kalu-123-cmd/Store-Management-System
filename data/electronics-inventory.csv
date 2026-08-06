@@ -1,0 +1,31 @@
+name,sku,stock,value,status
+LED Bulb 9W,ELC-001,50,9000.00,OK
+LED Bulb 15W,ELC-002,35,9800.00,OK
+Extension Cord,ELC-003,20,9000.00,OK
+Power Strip,ELC-004,15,11250.00,OK
+Phone Charger,ELC-005,30,19500.00,OK
+USB Charging Cable,ELC-006,45,11250.00,OK
+Wireless Mouse,ELC-007,18,16200.00,OK
+Wired Keyboard,ELC-008,12,14400.00,OK
+USB Flash Drive 32GB,ELC-009,25,21250.00,OK
+Bluetooth Speaker,ELC-010,10,22000.00,Low Stock
+Earphones,ELC-011,40,14000.00,OK
+Headphones,ELC-012,15,21750.00,OK
+Electric Kettle,ELC-013,8,14400.00,Low Stock
+Rice Cooker,ELC-014,7,22400.00,Low Stock
+Electric Iron,ELC-015,10,17500.00,OK
+Table Fan,ELC-016,9,22500.00,Low Stock
+Desk Lamp,ELC-017,22,20900.00,OK
+Calculator,ELC-018,30,13500.00,OK
+Power Bank 10000mAh,ELC-019,14,25200.00,OK
+Wall Clock,ELC-020,16,13600.00,OK
+TV Remote Control,ELC-021,18,5760.00,OK
+AA Batteries (Pack),ELC-022,60,7200.00,OK
+AAA Batteries (Pack),ELC-023,55,6600.00,OK
+Rechargeable Battery Charger,ELC-024,8,7600.00,Low Stock
+LED Emergency Light,ELC-025,12,16200.00,OK
+Portable Radio,ELC-026,6,7200.00,Low Stock
+Wi-Fi Router,ELC-027,10,25000.00,OK
+HDMI Cable,ELC-028,24,10800.00,OK
+Computer Monitor 24",ELC-029,5,47500.00,Low Stock
+Laptop Cooling Pad,ELC-030,11,15400.00,OK

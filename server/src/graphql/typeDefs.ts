@@ -141,6 +141,26 @@ export const typeDefs = `#graphql
     count: Int!
   }
 
+  type TraditionalItem {
+    id: ID!
+    name: String!
+    amharicName: String
+    region: String!
+    material: String
+    category: String!
+    description: String
+    culturalNote: String
+    imageUrl: String
+    costPrice: Float!
+    sellingPrice: Float!
+    stock: Int!
+    minStockLevel: Int!
+    status: String!
+    profitMargin: Float
+    createdAt: String!
+    updatedAt: String!
+  }
+
   type SaleItemInput {
     productId: String!
     quantity: Int!
@@ -181,6 +201,9 @@ export const typeDefs = `#graphql
 
     monthlySalesByDay(year: Int, month: Int, startDate: String, endDate: String): [DailySales!]!
     salesByCategory: [CategoryRevenue!]!
+
+    traditionalItems(search: String, category: String, region: String): [TraditionalItem!]!
+    traditionalItem(id: ID!): TraditionalItem
   }
 
   type Mutation {
@@ -241,5 +264,40 @@ export const typeDefs = `#graphql
     createUser(name: String!, email: String!, password: String!, role: String!): User!
     updateUserRole(id: ID!, role: String!): User!
     deleteUser(id: ID!): Boolean!
+
+    createTraditionalItem(
+      name: String!
+      amharicName: String
+      region: String!
+      material: String
+      category: String!
+      description: String
+      culturalNote: String
+      imageUrl: String
+      costPrice: Float!
+      sellingPrice: Float!
+      stock: Int
+      minStockLevel: Int
+      status: String
+    ): TraditionalItem!
+
+    updateTraditionalItem(
+      id: ID!
+      name: String
+      amharicName: String
+      region: String
+      material: String
+      category: String
+      description: String
+      culturalNote: String
+      imageUrl: String
+      costPrice: Float
+      sellingPrice: Float
+      minStockLevel: Int
+      status: String
+    ): TraditionalItem!
+
+    deleteTraditionalItem(id: ID!): Boolean!
+    adjustTraditionalStock(id: ID!, quantity: Int!, type: String!, notes: String): TraditionalItem!
   }
 `;
