@@ -4,6 +4,9 @@ import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Arch
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
+import { useLang } from '../lib/i18n';
+import LanguageSwitcher from './LanguageSwitcher';
+import StockAlertBell from './StockAlertBell';
 
 const navItems = [
   { name: 'Dashboard',  path: '/dashboard',  icon: <LayoutDashboard size={18} /> },
@@ -121,8 +124,9 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useDarkMode();
+  const { lang, setLang } = useLang();
   const location = useLocation();
-  const allNavItems = [...navItems, ...adminItems];
+  const allNavItems = [...navItems, ...adminItems, ...ethiopianItems];
   const currentPage = allNavItems.find(item => location.pathname.startsWith(item.path))?.name || 'Dashboard';
 
   return (
@@ -165,24 +169,28 @@ export default function Layout() {
             <h1 className="text-base font-semibold text-foreground">{currentPage}</h1>
           </div>
 
-          {/* Dark mode toggle */}
-          <button
-            onClick={() => setDark(d => !d)}
-            aria-label="Toggle dark mode"
-            className="w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-          >
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={dark ? 'sun' : 'moon'}
-                initial={{ rotate: -30, opacity: 0, scale: 0.8 }}
-                animate={{ rotate: 0, opacity: 1, scale: 1 }}
-                exit={{ rotate: 30, opacity: 0, scale: 0.8 }}
-                transition={{ duration: 0.18 }}
-              >
-                {dark ? <Sun size={18} /> : <Moon size={18} />}
-              </motion.span>
-            </AnimatePresence>
-          </button>
+          {/* Header right: stock alerts + language switcher + dark mode */}
+          <div className="flex items-center gap-1.5">
+            <StockAlertBell lang={lang} />
+            <LanguageSwitcher lang={lang} setLang={setLang} />
+            <button
+              onClick={() => setDark(d => !d)}
+              aria-label="Toggle dark mode"
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={dark ? 'sun' : 'moon'}
+                  initial={{ rotate: -30, opacity: 0, scale: 0.8 }}
+                  animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                  exit={{ rotate: 30, opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  {dark ? <Sun size={18} /> : <Moon size={18} />}
+                </motion.span>
+              </AnimatePresence>
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-5 md:p-6">

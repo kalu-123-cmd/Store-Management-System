@@ -227,6 +227,7 @@ export const typeDefs = `#graphql
       sku: String!
       barcode: String
       description: String
+      imageUrl: String
       costPrice: Float!
       sellingPrice: Float!
       categoryId: String!
@@ -242,6 +243,7 @@ export const typeDefs = `#graphql
       sku: String
       barcode: String
       description: String
+      imageUrl: String
       costPrice: Float
       sellingPrice: Float
       categoryId: String

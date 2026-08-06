@@ -73,6 +73,7 @@ const UPDATE_PRODUCT = gql`
 
 const productSchema = z.object({
   name:          z.string().min(2, 'Name must be at least 2 characters'),
+  amharicName:   z.string().optional(),
   sku:           z.string().min(2, 'SKU must be at least 2 characters'),
   barcode:       z.string().optional(),
   description:   z.string().optional(),
@@ -109,6 +110,7 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
   const defaultValues = editProduct
     ? {
         name: editProduct.name, sku: editProduct.sku,
+        amharicName: editProduct.amharicName || '',
         barcode: editProduct.barcode || '', description: editProduct.description || '',
         imageUrl: editProduct.imageUrl || '',
         costPrice: editProduct.costPrice, sellingPrice: editProduct.sellingPrice,
@@ -117,7 +119,7 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
         minStockLevel: editProduct.minStockLevel,
         status: editProduct.status,
       }
-    : { stock: 0, minStockLevel: 10, status: 'ACTIVE', imageUrl: '' };
+    : { stock: 0, minStockLevel: 10, status: 'ACTIVE', imageUrl: '', amharicName: '' };
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
@@ -140,6 +142,7 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
     const vals = editProduct
       ? {
           name: editProduct.name, sku: editProduct.sku,
+          amharicName: editProduct.amharicName || '',
           barcode: editProduct.barcode || '', description: editProduct.description || '',
           imageUrl: editProduct.imageUrl || '',
           costPrice: editProduct.costPrice, sellingPrice: editProduct.sellingPrice,
@@ -147,7 +150,7 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
           supplierId: editProduct.supplier?.id || '',
           minStockLevel: editProduct.minStockLevel, status: editProduct.status,
         }
-      : { stock: 0, minStockLevel: 10, status: 'ACTIVE', imageUrl: '' };
+      : { stock: 0, minStockLevel: 10, status: 'ACTIVE', imageUrl: '', amharicName: '' };
     reset(vals);
     setImagePreview(editProduct?.imageUrl || '');
     setImageTab('url');
@@ -180,11 +183,18 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
   const [updateProduct, { loading: updating }] = useMutation(UPDATE_PRODUCT);
 
   const onSubmit = async (values: ProductForm) => {
-    const payload = { ...values, imageUrl: values.imageUrl || null };
+    // amharicName is a UI-only field; append to description if provided
+    const { amharicName, ...rest } = values;
+    const description = [
+      amharicName ? `[አማርኛ: ${amharicName}]` : '',
+      rest.description || '',
+    ].filter(Boolean).join('\n') || undefined;
+
+    const payload = { ...rest, description, imageUrl: rest.imageUrl || null };
     try {
       if (editProduct) {
-        const { stock, ...rest } = payload;
-        await updateProduct({ variables: { id: editProduct.id, ...rest } });
+        const { stock, ...updateRest } = payload;
+        await updateProduct({ variables: { id: editProduct.id, ...updateRest } });
         success('Product updated', `${values.name} has been saved.`);
       } else {
         await createProduct({ variables: payload });
@@ -217,15 +227,45 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
             {/* Name + SKU */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className={lc}>Product Name *</label>
+                <label className={lc}>Product Name (English) *</label>
                 <input {...register('name')} placeholder="e.g. Jebena Coffee Pot" className={ic} />
                 {errors.name && <p className={ec}>{errors.name.message}</p>}
               </div>
               <div>
                 <label className={lc}>SKU *</label>
-                <input {...register('sku')} placeholder="e.g. TECH-001" className={ic} />
+                <input {...register('sku')} placeholder="e.g. ELC-001" className={ic} />
                 {errors.sku && <p className={ec}>{errors.sku.message}</p>}
               </div>
+            </div>
+
+            {/* Amharic Name */}
+            <div>
+              <label className={lc}>
+                ስም በአማርኛ <span className="text-muted-foreground font-normal text-xs">(Amharic / Tigrinya / Oromiffa)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  {...register('amharicName')}
+                  placeholder="ለምሳሌ፡ ጀበና  · መሶብ · ዳቦ"
+                  className={`${ic} amharic flex-1`}
+                  lang="am"
+                  dir="ltr"
+                  style={{ fontFamily: "'Noto Sans Ethiopic', serif", fontSize: '1.05em' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const name = (document.querySelector('input[name="name"]') as HTMLInputElement)?.value;
+                    if (!name) return;
+                    window.open(`https://translate.google.com/?sl=en&tl=am&text=${encodeURIComponent(name)}&op=translate`, '_blank');
+                  }}
+                  className="px-3 py-2 border border-border rounded-lg text-xs font-medium hover:bg-muted transition-colors shrink-0 flex items-center gap-1.5"
+                  title="Open Google Translate to get Amharic translation"
+                >
+                  🌐 Translate
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Type directly in Amharic, or click Translate to open Google Translate</p>
             </div>
 
             {/* Category + Supplier */}
