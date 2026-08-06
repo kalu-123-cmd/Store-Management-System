@@ -83,6 +83,13 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
+  /* Amharic / Ethiopic script support */
+  [lang="am"], .amharic {
+    font-family: 'Noto Sans Ethiopic', 'Abyssinica SIL', serif;
+    font-size: 1.05em;
+    line-height: 1.7;
+  }
+
   /* ── Smooth scrollbar ── */
   ::-webkit-scrollbar {
     width: 6px;

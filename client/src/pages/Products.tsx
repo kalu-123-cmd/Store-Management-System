@@ -218,7 +218,7 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={lc}>Product Name *</label>
-                <input {...register('name')} placeholder="e.g. iPhone 15 Pro" className={ic} />
+                <input {...register('name')} placeholder="e.g. Jebena Coffee Pot" className={ic} />
                 {errors.name && <p className={ec}>{errors.name.message}</p>}
               </div>
               <div>
