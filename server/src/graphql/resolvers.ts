@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { sendSaleReceipt, sendLowStockAlert } from './email';
+import { sendSaleReceipt, sendLowStockAlert } from '../email';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_jwt_key_12345';
 
