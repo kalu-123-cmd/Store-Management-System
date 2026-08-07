@@ -5,10 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node -e \"require('child_process').execSync('npx prisma db push --accept-data-loss', {stdio:'inherit'})\" && npx tsx src/index.ts",
+    "start": "npx prisma db push --accept-data-loss && npx tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "build": "npm install && npx prisma generate",
-    "migrate": "npx prisma db push --accept-data-loss",
+    "build": "npx prisma generate",
     "seed": "npx tsx prisma/seed.ts"
   },
   "keywords": [],
