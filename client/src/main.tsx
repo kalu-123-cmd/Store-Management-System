@@ -10,6 +10,7 @@ import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
 import { BrowserRouter } from 'react-router-dom'
 import { ToastProvider } from './components/Toast.tsx'
+import { LangProvider } from './lib/LangContext.tsx'
 
 // ── HTTP link ────────────────────────────────────────────────────────────────
 
@@ -70,9 +71,11 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <ApolloProvider client={client}>
       <BrowserRouter>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
+        <LangProvider>
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </LangProvider>
       </BrowserRouter>
     </ApolloProvider>
   </React.StrictMode>,

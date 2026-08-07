@@ -1,60 +1,106 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, AlertTriangle, X, Package, ChevronRight } from 'lucide-react';
+import { Bell, AlertTriangle, X, Package, ChevronRight, Volume2, VolumeX } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useStockAlerts } from '../hooks/useStockAlerts';
 import { useToast } from './Toast';
-import type { Lang } from '../lib/i18n';
+import { useLangContext } from '../lib/LangContext';
 import { t } from '../lib/i18n';
 
-interface Props {
-  lang: Lang;
+// ── Bell sound using Web Audio API (no external files needed) ─────────────────
+function playBellSound(type: 'out' | 'low' = 'low') {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+    const playTone = (freq: number, startTime: number, duration: number, gain: number) => {
+      const oscillator = ctx.createOscillator();
+      const gainNode   = ctx.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(freq, startTime);
+      oscillator.frequency.exponentialRampToValueAtTime(freq * 0.5, startTime + duration);
+
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(gain, startTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+      oscillator.start(startTime);
+      oscillator.stop(startTime + duration);
+    };
+
+    if (type === 'out') {
+      // Three descending urgent tones for out-of-stock
+      playTone(880, ctx.currentTime,        0.4, 0.5);
+      playTone(660, ctx.currentTime + 0.45, 0.4, 0.5);
+      playTone(440, ctx.currentTime + 0.9,  0.6, 0.6);
+    } else {
+      // Two gentle bell tones for low stock
+      playTone(660, ctx.currentTime,        0.5, 0.35);
+      playTone(880, ctx.currentTime + 0.55, 0.7, 0.3);
+    }
+  } catch {
+    // Web Audio not available — silent fail
+  }
 }
 
-export default function StockAlertBell({ lang }: Props) {
-  const [open, setOpen] = useState(false);
-  const [hasNew, setHasNew] = useState(false);
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function StockAlertBell() {
+  const [open, setOpen]       = useState(false);
+  const [hasNew, setHasNew]   = useState(false);
+  const [soundOn, setSoundOn] = useState(() => localStorage.getItem('storeos-sound') !== 'off');
   const panelRef = useRef<HTMLDivElement>(null);
   const { warning, error: toastError } = useToast();
+  const { lang } = useLangContext();
 
-  const { alerts } = useStockAlerts((newAlerts) => {
+  const toggleSound = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSoundOn(prev => {
+      const next = !prev;
+      localStorage.setItem('storeos-sound', next ? 'on' : 'off');
+      return next;
+    });
+  };
+
+  const handleAlerts = useCallback((newAlerts: any[]) => {
     if (!newAlerts.length) return;
 
     const outAlerts = newAlerts.filter(a => a.type === 'out');
     const lowAlerts = newAlerts.filter(a => a.type === 'low');
 
-    // Fire toasts for out-of-stock (max 3 to avoid spam)
-    outAlerts.slice(0, 3).forEach(a => {
-      toastError(
-        t('outOfStockAlert', lang),
-        `${a.name} (${a.sku}) — ${t('outOfStock', lang)}`
-      );
-    });
+    // Play sound
+    if (soundOn) {
+      if (outAlerts.length > 0) playBellSound('out');
+      else if (lowAlerts.length > 0) playBellSound('low');
+    }
 
-    // Fire a single summary toast for low stock
+    // Fire toasts
+    outAlerts.slice(0, 3).forEach(a => {
+      toastError(t('outOfStockAlert', lang), `${a.name} (${a.sku})`);
+    });
     if (lowAlerts.length > 0) {
-      warning(
-        t('lowStockAlert', lang),
-        `${lowAlerts.length} ${lang === 'en' ? 'product(s) below threshold' : t('lowStock', lang)}`
-      );
+      warning(t('lowStockAlert', lang), `${lowAlerts.length} ${t('lowStock', lang)}`);
     }
 
     setHasNew(true);
-  });
+  }, [soundOn, lang]);
 
-  // Close panel on outside click
+  const { alerts } = useStockAlerts(handleAlerts);
+
+  // Close on outside click
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    const h = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  const outAlerts = alerts.filter(a => a.type === 'out');
-  const lowAlerts = alerts.filter(a => a.type === 'low');
+  const outAlerts  = alerts.filter(a => a.type === 'out');
+  const lowAlerts  = alerts.filter(a => a.type === 'low');
   const totalAlerts = alerts.length;
 
   return (
@@ -62,10 +108,10 @@ export default function StockAlertBell({ lang }: Props) {
       {/* Bell button */}
       <button
         onClick={() => { setOpen(o => !o); setHasNew(false); }}
-        aria-label="Stock alerts"
+        aria-label={t('stockAlert', lang)}
         className="relative w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
       >
-        <Bell size={18} />
+        <Bell size={18} className={totalAlerts > 0 ? (outAlerts.length > 0 ? 'text-destructive' : 'text-amber-500') : ''} />
         {totalAlerts > 0 && (
           <span className={`absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full text-[10px] font-bold flex items-center justify-center px-1 ${
             outAlerts.length > 0 ? 'bg-destructive text-destructive-foreground' : 'bg-amber-500 text-white'
@@ -75,7 +121,7 @@ export default function StockAlertBell({ lang }: Props) {
         )}
       </button>
 
-      {/* Dropdown panel */}
+      {/* Dropdown */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -96,9 +142,19 @@ export default function StockAlertBell({ lang }: Props) {
                   </span>
                 )}
               </div>
-              <button onClick={() => setOpen(false)}>
-                <X size={14} className="text-muted-foreground hover:text-foreground" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {/* Sound toggle */}
+                <button
+                  onClick={toggleSound}
+                  title={soundOn ? 'Mute alerts' : 'Unmute alerts'}
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  {soundOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                </button>
+                <button onClick={() => setOpen(false)}>
+                  <X size={14} className="text-muted-foreground hover:text-foreground" />
+                </button>
+              </div>
             </div>
 
             {/* Alert list */}
@@ -108,32 +164,25 @@ export default function StockAlertBell({ lang }: Props) {
                   <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center">
                     <Package size={20} className="text-emerald-500" />
                   </div>
-                  <p className="text-sm font-medium text-foreground">All stock levels healthy</p>
-                  <p className="text-xs text-muted-foreground">No alerts at this time.</p>
+                  <p className="text-sm font-medium text-foreground">{t('inStock', lang)}</p>
+                  <p className="text-xs text-muted-foreground">{t('noData', lang)}</p>
                 </div>
               ) : (
                 <>
-                  {/* Out of stock — shown first */}
                   {outAlerts.map(alert => (
-                    <div key={alert.id}
-                      className="flex items-start gap-3 px-4 py-3 border-b border-border hover:bg-muted/20 transition-colors">
+                    <div key={alert.id} className="flex items-start gap-3 px-4 py-3 border-b border-border hover:bg-muted/20 transition-colors">
                       <div className="w-7 h-7 bg-destructive/10 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
                         <AlertTriangle size={13} className="text-destructive" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-foreground truncate">{alert.name}</p>
                         <p className="text-xs text-muted-foreground">{alert.sku} · {alert.category?.name}</p>
-                        <p className="text-xs font-bold text-destructive mt-0.5">
-                          {t('outOfStockAlert', lang)}
-                        </p>
+                        <p className="text-xs font-bold text-destructive mt-0.5">{t('outOfStockAlert', lang)}</p>
                       </div>
                     </div>
                   ))}
-
-                  {/* Low stock */}
                   {lowAlerts.map(alert => (
-                    <div key={alert.id}
-                      className="flex items-start gap-3 px-4 py-3 border-b border-border hover:bg-muted/20 transition-colors">
+                    <div key={alert.id} className="flex items-start gap-3 px-4 py-3 border-b border-border hover:bg-muted/20 transition-colors">
                       <div className="w-7 h-7 bg-amber-500/10 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
                         <AlertTriangle size={13} className="text-amber-500" />
                       </div>
@@ -150,14 +199,10 @@ export default function StockAlertBell({ lang }: Props) {
               )}
             </div>
 
-            {/* Footer link */}
             {totalAlerts > 0 && (
-              <Link
-                to="/inventory"
-                onClick={() => setOpen(false)}
-                className="flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-medium text-primary hover:bg-primary/5 transition-colors border-t border-border"
-              >
-                View in Inventory <ChevronRight size={12} />
+              <Link to="/inventory" onClick={() => setOpen(false)}
+                className="flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-medium text-primary hover:bg-primary/5 transition-colors border-t border-border">
+                {t('inventory', lang)} <ChevronRight size={12} />
               </Link>
             )}
           </motion.div>

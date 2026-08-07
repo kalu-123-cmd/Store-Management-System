@@ -4,7 +4,7 @@ import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Arch
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
-import { useLang } from '../lib/i18n';
+import { useLangContext } from '../lib/LangContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import StockAlertBell from './StockAlertBell';
 
@@ -124,7 +124,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useDarkMode();
-  const { lang, setLang } = useLang();
+  const { lang, setLang, t } = useLangContext();
   const location = useLocation();
   const allNavItems = [...navItems, ...adminItems, ...ethiopianItems];
   const currentPage = allNavItems.find(item => location.pathname.startsWith(item.path))?.name || 'Dashboard';
@@ -171,7 +171,7 @@ export default function Layout() {
 
           {/* Header right: stock alerts + language switcher + dark mode */}
           <div className="flex items-center gap-1.5">
-            <StockAlertBell lang={lang} />
+            <StockAlertBell />
             <LanguageSwitcher lang={lang} setLang={setLang} />
             <button
               onClick={() => setDark(d => !d)}

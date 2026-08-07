@@ -324,7 +324,15 @@ export const resolvers = {
 
     createSupplier: async (_: any, args: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
-      return prisma.supplier.create({ data: args });
+      return prisma.supplier.create({
+        data: {
+          name:        args.name,
+          contactName: args.contactName || null,
+          email:       args.email       || null,
+          phone:       args.phone       || null,
+          address:     args.address     || null,
+        },
+      });
     },
     updateSupplier: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
@@ -354,26 +362,73 @@ export const resolvers = {
 
     createProduct: async (_: any, args: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
+
+      // Sanitise optional fields — empty strings must become null/undefined
+      const data: any = {
+        name:          args.name,
+        sku:           args.sku,
+        costPrice:     args.costPrice,
+        sellingPrice:  args.sellingPrice,
+        categoryId:    args.categoryId,
+        stock:         args.stock         ?? 0,
+        minStockLevel: args.minStockLevel ?? 10,
+        status:        args.status        ?? 'ACTIVE',
+        description:   args.description   || null,
+        imageUrl:      args.imageUrl       || null,
+        // barcode is unique — must be null not empty string
+        barcode:       args.barcode        || null,
+        // supplierId must be null when not provided
+        supplierId:    args.supplierId     || null,
+      };
+
       const p = await prisma.product.create({
-        data: { ...args, stock: args.stock ?? 0, minStockLevel: args.minStockLevel ?? 10, status: args.status ?? 'ACTIVE' },
+        data,
         include: { category: true, supplier: true, saleItems: true },
       });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'PRODUCT_CREATED', details: `Created product: ${p.name}` } });
       return { ...p, profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() };
     },
 
-    updateProduct: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
+    updateProduct: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
-      const p = await prisma.product.update({ where: { id }, data, include: { category: true, supplier: true, saleItems: true } });
+
+      const data: any = { ...args };
+      // Sanitise: empty string → null for unique/relation fields
+      if ('barcode'    in data) data.barcode    = data.barcode    || null;
+      if ('imageUrl'   in data) data.imageUrl   = data.imageUrl   || null;
+      if ('description' in data) data.description = data.description || null;
+      if ('supplierId' in data) data.supplierId = data.supplierId || null;
+
+      const p = await prisma.product.update({
+        where: { id },
+        data,
+        include: { category: true, supplier: true, saleItems: true },
+      });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'PRODUCT_UPDATED', details: `Updated product: ${p.name}` } });
       return { ...p, profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() };
     },
 
     deleteProduct: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
-      const p = await prisma.product.findUnique({ where: { id } });
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const p = await prisma.product.findUnique({
+        where: { id },
+        include: { saleItems: true, transactions: true },
+      });
+      if (!p) throw new Error('Product not found');
+
+      // If product has sales history, mark as INACTIVE instead of hard-deleting
+      if (p.saleItems.length > 0) {
+        await prisma.product.update({ where: { id }, data: { status: 'INACTIVE' } });
+        await prisma.activityLog.create({ data: { userId: user.id, action: 'PRODUCT_DEACTIVATED', details: `Deactivated product: ${p.name} (has sales history)` } });
+        return true;
+      }
+
+      // Safe to hard-delete — remove transactions first
+      if (p.transactions.length > 0) {
+        await prisma.transaction.deleteMany({ where: { productId: id } });
+      }
       await prisma.product.delete({ where: { id } });
-      await prisma.activityLog.create({ data: { userId: user.id, action: 'PRODUCT_DELETED', details: `Deleted product: ${p?.name}` } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'PRODUCT_DELETED', details: `Deleted product: ${p.name}` } });
       return true;
     },
 
@@ -516,28 +571,44 @@ export const resolvers = {
       requireRole(user, 'ADMIN', 'MANAGER');
       const item = await prisma.traditionalItem.create({
         data: {
-          ...args,
-          stock: args.stock ?? 0,
+          name:          args.name,
+          region:        args.region,
+          category:      args.category,
+          costPrice:     args.costPrice,
+          sellingPrice:  args.sellingPrice,
+          stock:         args.stock         ?? 0,
           minStockLevel: args.minStockLevel ?? 5,
-          status: args.status ?? 'ACTIVE',
+          status:        args.status        ?? 'ACTIVE',
+          amharicName:   args.amharicName   || null,
+          material:      args.material      || null,
+          description:   args.description   || null,
+          culturalNote:  args.culturalNote  || null,
+          imageUrl:      args.imageUrl      || null,
         },
       });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'TRADITIONAL_ITEM_CREATED', details: `Created traditional item: ${item.name}` } });
       return mapItem(item);
     },
 
-    updateTraditionalItem: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
+    updateTraditionalItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
+      const data: any = { ...args };
+      if ('imageUrl'    in data) data.imageUrl    = data.imageUrl    || null;
+      if ('description' in data) data.description = data.description || null;
+      if ('culturalNote' in data) data.culturalNote = data.culturalNote || null;
+      if ('material'    in data) data.material    = data.material    || null;
+      if ('amharicName' in data) data.amharicName = data.amharicName || null;
       const item = await prisma.traditionalItem.update({ where: { id }, data });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'TRADITIONAL_ITEM_UPDATED', details: `Updated traditional item: ${item.name}` } });
       return mapItem(item);
     },
 
     deleteTraditionalItem: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
+      requireRole(user, 'ADMIN', 'MANAGER');
       const item = await prisma.traditionalItem.findUnique({ where: { id } });
+      if (!item) throw new Error('Item not found');
       await prisma.traditionalItem.delete({ where: { id } });
-      await prisma.activityLog.create({ data: { userId: user.id, action: 'TRADITIONAL_ITEM_DELETED', details: `Deleted traditional item: ${item?.name}` } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'TRADITIONAL_ITEM_DELETED', details: `Deleted traditional item: ${item.name}` } });
       return true;
     },
 
