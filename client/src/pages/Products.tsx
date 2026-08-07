@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, gql } from '@apollo/client';
+import { useQuery, useMutation, useApolloClient, gql } from '@apollo/client';
 import {
   createColumnHelper, flexRender, getCoreRowModel, useReactTable,
   getSortedRowModel, getPaginationRowModel,
@@ -138,6 +138,7 @@ function ImagePreview({ src, onClear }: { src: string; onClear: () => void }) {
 
 function ProductModal({ open, onClose, categories, suppliers, products, refetch, editProduct }: any) {
   const { success, error: toastError } = useToast();
+  const client = useApolloClient();
   const [imagePreview, setImagePreview] = useState('');
   const [imageTab, setImageTab] = useState<'url' | 'upload'>('url');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -214,8 +215,16 @@ function ProductModal({ open, onClose, categories, suppliers, products, refetch,
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const [createProduct, { loading: creating }] = useMutation(CREATE_PRODUCT);
-  const [updateProduct, { loading: updating }] = useMutation(UPDATE_PRODUCT);
+  const [createProduct, { loading: creating }] = useMutation(CREATE_PRODUCT, {
+    onCompleted: () => client.cache.evict({ fieldName: 'products' }),
+  });
+  const [updateProduct, { loading: updating }] = useMutation(UPDATE_PRODUCT, {
+    onCompleted: (data) => {
+      // Evict this specific product from all cached queries so every page re-fetches it
+      client.cache.evict({ id: client.cache.identify({ __typename: 'Product', id: data.updateProduct.id }) });
+      client.cache.gc();
+    },
+  });
 
   const onSubmit = async (values: ProductForm) => {
     // amharicName is a UI-only field; append to description if provided
