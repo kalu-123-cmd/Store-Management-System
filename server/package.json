@@ -5,10 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "npx prisma migrate deploy && tsx src/index.ts",
+    "start": "node -e \"require('child_process').execSync('npx prisma db push --accept-data-loss', {stdio:'inherit'})\" && npx tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "build": "npx prisma generate",
-    "migrate": "npx prisma migrate deploy"
+    "build": "npm install && npx prisma generate",
+    "migrate": "npx prisma db push --accept-data-loss",
+    "seed": "npx tsx prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
