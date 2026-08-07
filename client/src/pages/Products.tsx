@@ -99,6 +99,41 @@ type Product = {
 
 const columnHelper = createColumnHelper<Product>();
 
+// ── Image Preview with broken-state handling ──────────────────────────────────
+
+function ImagePreview({ src, onClear }: { src: string; onClear: () => void }) {
+  const [broken, setBroken] = React.useState(false);
+
+  React.useEffect(() => { setBroken(false); }, [src]);
+
+  return (
+    <div className="relative w-16 h-16 shrink-0">
+      {broken ? (
+        <div className="w-16 h-16 rounded-lg bg-destructive/10 border border-destructive/30 flex flex-col items-center justify-center gap-0.5">
+          <ImageIcon size={16} className="text-destructive" />
+          <p className="text-[8px] text-destructive text-center leading-tight px-1">Can't load</p>
+        </div>
+      ) : (
+        <img
+          src={src}
+          alt="Preview"
+          referrerPolicy="no-referrer"
+          crossOrigin="anonymous"
+          onError={() => setBroken(true)}
+          className="w-16 h-16 rounded-lg object-cover border border-border"
+        />
+      )}
+      <button
+        type="button"
+        onClick={onClear}
+        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center shadow-md hover:bg-destructive/90 transition-colors"
+      >
+        <X size={10} />
+      </button>
+    </div>
+  );
+}
+
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
 function ProductModal({ open, onClose, categories, suppliers, products, refetch, editProduct }: any) {
@@ -128,10 +163,10 @@ function ProductModal({ open, onClose, categories, suppliers, products, refetch,
 
   const watchedImageUrl = watch('imageUrl');
 
-  // Update preview whenever imageUrl changes
+  // Update preview whenever imageUrl changes — accept any non-empty string
   useEffect(() => {
-    if (watchedImageUrl && (watchedImageUrl.startsWith('http') || watchedImageUrl.startsWith('data:'))) {
-      setImagePreview(watchedImageUrl);
+    if (watchedImageUrl && watchedImageUrl.trim().length > 0) {
+      setImagePreview(watchedImageUrl.trim());
     } else {
       setImagePreview('');
     }
@@ -359,7 +394,10 @@ function ProductModal({ open, onClose, categories, suppliers, products, refetch,
                       <input {...register('imageUrl')}
                         placeholder="https://example.com/product.jpg"
                         className={ic} />
-                      <p className="text-xs text-muted-foreground mt-1">Paste a direct image link</p>
+                      <div className="mt-1 space-y-0.5">
+                        <p className="text-xs text-muted-foreground">Paste a <strong>direct image link</strong> ending in .jpg, .png, or .webp</p>
+                        <p className="text-[10px] text-amber-600">⚠ Google search URLs won't work — right-click an image → "Open image in new tab" → copy that URL</p>
+                      </div>
                     </>
                   ) : (
                     <>
@@ -388,15 +426,7 @@ function ProductModal({ open, onClose, categories, suppliers, products, refetch,
                 {/* Preview + clear */}
                 <div className="relative shrink-0">
                   {imagePreview ? (
-                    <>
-                      <img src={imagePreview} alt="Preview"
-                        onError={() => setImagePreview('')}
-                        className="w-16 h-16 rounded-lg object-cover border border-border" />
-                      <button type="button" onClick={clearImage}
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center shadow-md hover:bg-destructive/90 transition-colors">
-                        <X size={10} />
-                      </button>
-                    </>
+                    <ImagePreview src={imagePreview} onClear={clearImage} />
                   ) : (
                     <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border border-border">
                       <ImageIcon size={22} />
@@ -499,8 +529,18 @@ export default function Products() {
         return (
           <div className="flex items-center gap-3">
             {img ? (
-              <img src={img} alt={info.getValue()} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                className="w-8 h-8 rounded-lg object-cover shrink-0 border border-border" />
+              <img
+                src={img}
+                alt={info.getValue()}
+                referrerPolicy="no-referrer"
+                crossOrigin="anonymous"
+                onError={e => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  if (target.nextSibling) (target.nextSibling as HTMLElement).style.display = 'flex';
+                }}
+                className="w-8 h-8 rounded-lg object-cover shrink-0 border border-border"
+              />
             ) : (
               <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center text-primary shrink-0">
                 <Package size={15} />
