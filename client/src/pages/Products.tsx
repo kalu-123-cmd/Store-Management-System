@@ -118,7 +118,6 @@ function ImagePreview({ src, onClear }: { src: string; onClear: () => void }) {
           src={src}
           alt="Preview"
           referrerPolicy="no-referrer"
-          crossOrigin="anonymous"
           onError={() => setBroken(true)}
           className="w-16 h-16 rounded-lg object-cover border border-border"
         />
@@ -542,7 +541,6 @@ export default function Products() {
                 src={img}
                 alt={info.getValue()}
                 referrerPolicy="no-referrer"
-                crossOrigin="anonymous"
                 onError={e => {
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
