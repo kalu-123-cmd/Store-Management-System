@@ -128,6 +128,36 @@ export const typeDefs = `#graphql
     outOfStockCount: Int!
   }
 
+  type PurchaseOrder {
+    id: ID!
+    poNumber: String!
+    supplierId: String
+    supplier: Supplier
+    status: String!
+    notes: String
+    userId: String!
+    user: User
+    items: [PurchaseOrderItem!]!
+    totalCost: Float!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type PurchaseOrderItem {
+    id: ID!
+    purchaseOrderId: String!
+    productId: String!
+    product: Product
+    quantity: Int!
+    unitCost: Float!
+  }
+
+  input POItemInput {
+    productId: String!
+    quantity: Int!
+    unitCost: Float!
+  }
+
   type DailySales {
     date: String!
     revenue: Float!
@@ -204,6 +234,9 @@ export const typeDefs = `#graphql
 
     traditionalItems(search: String, category: String, region: String): [TraditionalItem!]!
     traditionalItem(id: ID!): TraditionalItem
+
+    purchaseOrders: [PurchaseOrder!]!
+    purchaseOrder(id: ID!): PurchaseOrder
   }
 
   type Mutation {
@@ -266,6 +299,12 @@ export const typeDefs = `#graphql
     createUser(name: String!, email: String!, password: String!, role: String!): User!
     updateUserRole(id: ID!, role: String!): User!
     deleteUser(id: ID!): Boolean!
+    updateProfile(name: String, currentPassword: String!, newPassword: String): User!
+
+    createPurchaseOrder(supplierId: String, notes: String, items: [POItemInput!]!): PurchaseOrder!
+    updatePurchaseOrderStatus(id: ID!, status: String!): PurchaseOrder!
+    receivePurchaseOrder(id: ID!): PurchaseOrder!
+    deletePurchaseOrder(id: ID!): Boolean!
 
     createTraditionalItem(
       name: String!

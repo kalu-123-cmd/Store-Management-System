@@ -1,20 +1,21 @@
 import React from 'react';
+import React, { useState } from 'react';
 import { useQuery, gql } from '@apollo/client';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Package, TrendingUp, DollarSign, Users, ShoppingCart,
-  AlertTriangle, BarChart2, Layers, ArrowRight,
+  AlertTriangle, BarChart2, Layers, ArrowRight, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
 
 // ── Queries ─────────────────────────────────────────────────────────────────
 
 const GET_DASHBOARD_MAIN = gql`
-  query GetDashboardMain {
+  query GetDashboardMain($year: Int, $month: Int) {
     dashboardStats {
       totalProducts totalCategories totalSuppliers totalCustomers
       inventoryValue todaySales monthlyRevenue monthlyProfit
@@ -28,7 +29,7 @@ const GET_DASHBOARD_MAIN = gql`
       id invoiceNo totalAmount createdAt
       customer { name }
     }
-    monthlySalesByDay {
+    monthlySalesByDay(year: $year, month: $month) {
       date revenue profit count
     }
     salesByCategory {
@@ -47,7 +48,8 @@ const GET_ACTIVITY = gql`
   }
 `;
 
-import { fmtCompact, fmt, fmtInt, CURRENCY_SYMBOL } from '../lib/currency';
+import { fmtCompact, fmt, fmtInt } from '../lib/currency';
+import { useLangContext } from '../lib/LangContext';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -103,12 +105,18 @@ function Spinner() {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const { data, loading } = useQuery(GET_DASHBOARD_MAIN, { fetchPolicy: 'cache-and-network' });
-  // errorPolicy: ignore — CASHIER gets "Not authorized" for activityLogs, everything else still renders
-  const { data: actData } = useQuery(GET_ACTIVITY, {
+  const { t } = useLangContext();
+  const now = new Date();
+  const [chartYear, setChartYear]   = useState(now.getFullYear());
+  const [chartMonth, setChartMonth] = useState(now.getMonth()); // 0-indexed
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const { data, loading } = useQuery(GET_DASHBOARD_MAIN, {
+    variables: { year: chartYear, month: chartMonth },
     fetchPolicy: 'cache-and-network',
-    errorPolicy: 'ignore',
   });
+  const { data: actData } = useQuery(GET_ACTIVITY, { fetchPolicy: 'cache-and-network', errorPolicy: 'ignore' });
 
   const stats      = data?.dashboardStats;
   const lowStock   = data?.lowStockProducts  || [];
@@ -128,59 +136,18 @@ export default function Dashboard() {
 
       {/* ── KPI Row 1 ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard
-          title="Monthly Revenue"
-          value={`${fmt(stats?.monthlyRevenue || 0)}`}
-          icon={<DollarSign size={20} className="text-primary" />}
-          color="bg-primary/10" delay={0}
-        />
-        <KPICard
-          title="Monthly Profit"
-          value={`${fmt(stats?.monthlyProfit || 0)}`}
-          icon={<TrendingUp size={20} className="text-emerald-500" />}
-          color="bg-emerald-500/10" delay={0.07}
-        />
-        <KPICard
-          title="Total Products"
-          value={stats?.totalProducts || 0}
-          icon={<Package size={20} className="text-violet-500" />}
-          color="bg-violet-500/10" delay={0.14}
-          sub={stats?.lowStockCount ? `${stats.lowStockCount} low stock` : undefined}
-        />
-        <KPICard
-          title="Customers"
-          value={stats?.totalCustomers || 0}
-          icon={<Users size={20} className="text-amber-500" />}
-          color="bg-amber-500/10" delay={0.21}
-        />
+        <KPICard title={t('revenue')}        value={fmt(stats?.monthlyRevenue || 0)}   icon={<DollarSign size={20} className="text-primary" />}        color="bg-primary/10"   delay={0} />
+        <KPICard title={t('profit')}          value={fmt(stats?.monthlyProfit || 0)}    icon={<TrendingUp size={20} className="text-emerald-500" />}    color="bg-emerald-500/10" delay={0.07} />
+        <KPICard title={t('products')}        value={stats?.totalProducts || 0}          icon={<Package size={20} className="text-violet-500" />}        color="bg-violet-500/10" delay={0.14} sub={stats?.lowStockCount ? `${stats.lowStockCount} ${t('lowStock')}` : undefined} />
+        <KPICard title={t('customers')}       value={stats?.totalCustomers || 0}         icon={<Users size={20} className="text-amber-500" />}           color="bg-amber-500/10" delay={0.21} />
       </div>
 
       {/* ── KPI Row 2 ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard
-          title="Today's Sales"
-          value={`${fmt(stats?.todaySales || 0)}`}
-          icon={<ShoppingCart size={20} className="text-sky-500" />}
-          color="bg-sky-500/10" delay={0.28}
-        />
-        <KPICard
-          title="Inventory Value"
-          value={`${fmtInt(stats?.inventoryValue || 0)}`}
-          icon={<BarChart2 size={20} className="text-indigo-500" />}
-          color="bg-indigo-500/10" delay={0.35}
-        />
-        <KPICard
-          title="Out of Stock"
-          value={stats?.outOfStockCount || 0}
-          icon={<AlertTriangle size={20} className="text-destructive" />}
-          color="bg-destructive/10" delay={0.42}
-        />
-        <KPICard
-          title="Categories"
-          value={stats?.totalCategories || 0}
-          icon={<Layers size={20} className="text-orange-500" />}
-          color="bg-orange-500/10" delay={0.49}
-        />
+        <KPICard title={t('todaySales')}      value={fmt(stats?.todaySales || 0)}       icon={<ShoppingCart size={20} className="text-sky-500" />}      color="bg-sky-500/10"   delay={0.28} />
+        <KPICard title={t('inventoryValue')}  value={fmtInt(stats?.inventoryValue || 0)} icon={<BarChart2 size={20} className="text-indigo-500" />}      color="bg-indigo-500/10" delay={0.35} />
+        <KPICard title={t('outOfStock')}      value={stats?.outOfStockCount || 0}        icon={<AlertTriangle size={20} className="text-destructive" />} color="bg-destructive/10" delay={0.42} />
+        <KPICard title={t('categories')}      value={stats?.totalCategories || 0}        icon={<Layers size={20} className="text-orange-500" />}         color="bg-orange-500/10" delay={0.49} />
       </div>
 
       {/* ── Charts Row ── */}
@@ -193,12 +160,33 @@ export default function Dashboard() {
         >
           <div className="flex items-center justify-between mb-5">
             <div>
-              <h3 className="text-base font-semibold text-foreground">Revenue &amp; Profit — This Month</h3>
+              <h3 className="text-base font-semibold text-foreground">{t('revenue')} &amp; {t('profit')} — This Month</h3>
               <p className="text-xs text-muted-foreground mt-0.5">Daily breakdown from live sales data</p>
             </div>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-primary inline-block" />Revenue</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />Profit</span>
+            <div className="flex items-center gap-3">
+              {/* Month/Year navigator */}
+              <div className="flex items-center gap-1 bg-muted/40 rounded-lg px-2 py-1">
+                <button onClick={() => {
+                  if (chartMonth === 0) { setChartMonth(11); setChartYear(y => y - 1); }
+                  else setChartMonth(m => m - 1);
+                }} className="p-0.5 hover:text-primary transition-colors">
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="text-xs font-medium text-foreground w-16 text-center">
+                  {MONTHS[chartMonth]} {chartYear}
+                </span>
+                <button onClick={() => {
+                  if (chartMonth === 11) { setChartMonth(0); setChartYear(y => y + 1); }
+                  else setChartMonth(m => m + 1);
+                }} disabled={chartYear === now.getFullYear() && chartMonth === now.getMonth()}
+                className="p-0.5 hover:text-primary transition-colors disabled:opacity-30">
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-primary inline-block" />{t('revenue')}</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />{t('profit')}</span>
+              </div>
             </div>
           </div>
           <div className="h-[260px]">
@@ -237,7 +225,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}
           className="bg-card border border-border rounded-xl p-6 shadow-sm"
         >
-          <h3 className="text-base font-semibold text-foreground mb-1">Sales by Category</h3>
+          <h3 className="text-base font-semibold text-foreground mb-1">{t('sales')} by Category</h3>
           <p className="text-xs text-muted-foreground mb-4">Revenue breakdown</p>
           {catData.length === 0 ? (
             <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">No data yet.</div>
@@ -292,7 +280,7 @@ export default function Dashboard() {
           className="bg-card border border-border rounded-xl shadow-sm overflow-hidden"
         >
           <div className="p-5 border-b border-border flex items-center justify-between">
-            <h3 className="text-base font-semibold text-foreground">Recent Sales</h3>
+            <h3 className="text-base font-semibold text-foreground">{t('recentSales')}</h3>
             <Link to="/sales" className="text-xs text-primary hover:underline flex items-center gap-1">
               View all <ArrowRight size={12} />
             </Link>

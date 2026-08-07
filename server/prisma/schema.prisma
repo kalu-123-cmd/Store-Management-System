@@ -8,16 +8,17 @@ generator client {
 }
 
 model User {
-  id        String        @id @default(uuid())
-  name      String
-  email     String        @unique
-  password  String
-  role      String        @default("CASHIER")
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  sales     Sale[]
-  returns   SaleReturn[]
-  logs      ActivityLog[]
+  id             String          @id @default(uuid())
+  name           String
+  email          String          @unique
+  password       String
+  role           String          @default("CASHIER")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sales          Sale[]
+  returns        SaleReturn[]
+  logs           ActivityLog[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model Category {
@@ -28,13 +29,14 @@ model Category {
 }
 
 model Supplier {
-  id          String    @id @default(uuid())
-  name        String
-  contactName String?
-  email       String?
-  phone       String?
-  address     String?
-  products    Product[]
+  id             String          @id @default(uuid())
+  name           String
+  contactName    String?
+  email          String?
+  phone          String?
+  address        String?
+  products       Product[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model Customer {
@@ -47,25 +49,26 @@ model Customer {
 }
 
 model Product {
-  id            String    @id @default(uuid())
-  name          String
-  sku           String    @unique
-  barcode       String?   @unique
-  description   String?
-  imageUrl      String?
-  costPrice     Float
-  sellingPrice  Float
-  stock         Int       @default(0)
-  minStockLevel Int       @default(10)
-  status        String    @default("ACTIVE")
-  categoryId    String
-  category      Category  @relation(fields: [categoryId], references: [id])
-  supplierId    String?
-  supplier      Supplier? @relation(fields: [supplierId], references: [id])
-  transactions  Transaction[]
-  saleItems     SaleItem[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                 String              @id @default(uuid())
+  name               String
+  sku                String              @unique
+  barcode            String?             @unique
+  description        String?
+  imageUrl           String?
+  costPrice          Float
+  sellingPrice       Float
+  stock              Int                 @default(0)
+  minStockLevel      Int                 @default(10)
+  status             String              @default("ACTIVE")
+  categoryId         String
+  category           Category            @relation(fields: [categoryId], references: [id])
+  supplierId         String?
+  supplier           Supplier?           @relation(fields: [supplierId], references: [id])
+  transactions       Transaction[]
+  saleItems          SaleItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
 model Transaction {
@@ -121,6 +124,30 @@ model ActivityLog {
   details   String?
   ipAddress String?
   createdAt DateTime @default(now())
+}
+
+model PurchaseOrder {
+  id         String              @id @default(uuid())
+  poNumber   String              @unique
+  supplierId String?
+  supplier   Supplier?           @relation(fields: [supplierId], references: [id])
+  status     String              @default("DRAFT") // DRAFT, SENT, RECEIVED, CANCELLED
+  notes      String?
+  userId     String
+  user       User                @relation(fields: [userId], references: [id])
+  items      PurchaseOrderItem[]
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(uuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  quantity        Int
+  unitCost        Float
 }
 
 model TraditionalItem {

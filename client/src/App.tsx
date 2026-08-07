@@ -1,18 +1,20 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Login           from './pages/Login';
-import Layout          from './components/Layout';
-import Dashboard       from './pages/Dashboard';
-import Products        from './pages/Products';
-import Sales           from './pages/Sales';
-import Customers       from './pages/Customers';
-import Suppliers       from './pages/Suppliers';
-import Categories      from './pages/Categories';
-import Inventory       from './pages/Inventory';
-import Reports         from './pages/Reports';
-import Users           from './pages/Users';
+import Login            from './pages/Login';
+import Layout           from './components/Layout';
+import Dashboard        from './pages/Dashboard';
+import Products         from './pages/Products';
+import Sales            from './pages/Sales';
+import Customers        from './pages/Customers';
+import Suppliers        from './pages/Suppliers';
+import Categories       from './pages/Categories';
+import Inventory        from './pages/Inventory';
+import Reports          from './pages/Reports';
+import Users            from './pages/Users';
 import TraditionalItems from './pages/TraditionalItems';
-import NotFound        from './pages/NotFound';
+import Profile          from './pages/Profile';
+import PurchaseOrders   from './pages/PurchaseOrders';
+import NotFound         from './pages/NotFound';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token');
@@ -36,6 +38,8 @@ export default function App() {
         <Route path="reports"     element={<Reports         />} />
         <Route path="users"       element={<Users           />} />
         <Route path="traditional" element={<TraditionalItems />} />
+        <Route path="profile"     element={<Profile         />} />
+        <Route path="purchases"   element={<PurchaseOrders  />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

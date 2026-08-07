@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, X, Edit2, Trash2, Filter,
   ImageIcon, Upload, AlertTriangle, Package2,
-  MapPin, Layers, ChevronDown, ChevronUp,
+  MapPin, Layers, ChevronDown, ChevronUp, FileDown,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -554,6 +554,26 @@ export default function TraditionalItems() {
     } catch (e: any) { toastError('Delete failed', e.message); }
   };
 
+  const exportCSV = () => {
+    if (!items.length) return;
+    const rows = [
+      ['Name', 'Amharic Name', 'SKU', 'Category', 'Region', 'Material', 'Cost (ETB)', 'Price (ETB)', 'Stock', 'Min Stock', 'Status', 'Cultural Note'],
+      ...items.map(i => [
+        i.name, i.amharicName || '', i.id.slice(0,8).toUpperCase(),
+        i.category, i.region, i.material || '',
+        i.costPrice, i.sellingPrice, i.stock, i.minStockLevel,
+        i.stock === 0 ? 'Out of Stock' : i.stock <= i.minStockLevel ? 'Low Stock' : 'OK',
+        (i.culturalNote || '').replace(/,/g, ';'),
+      ]),
+    ];
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'traditional-items.csv'; a.click();
+    URL.revokeObjectURL(url);
+    success('Export ready', 'traditional-items.csv downloaded.');
+  };
+
   return (
     <div className="space-y-6">
 
@@ -581,6 +601,10 @@ export default function TraditionalItems() {
             <Plus size={16} /> Add Item
           </button>
         )}
+        <button onClick={exportCSV}
+          className="px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted flex items-center gap-2 transition-colors">
+          <FileDown size={14} /> Export CSV
+        </button>
       </div>
 
       {/* ── KPI strip ── */}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star } from 'lucide-react';
+import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
@@ -9,14 +9,15 @@ import LanguageSwitcher from './LanguageSwitcher';
 import StockAlertBell from './StockAlertBell';
 
 const navItems = [
-  { name: 'Dashboard',  path: '/dashboard',  icon: <LayoutDashboard size={18} /> },
-  { name: 'Products',   path: '/products',   icon: <Package size={18} /> },
-  { name: 'Inventory',  path: '/inventory',  icon: <Archive size={18} /> },
-  { name: 'Sales',      path: '/sales',      icon: <ShoppingCart size={18} /> },
-  { name: 'Customers',  path: '/customers',  icon: <Users size={18} /> },
-  { name: 'Suppliers',  path: '/suppliers',  icon: <Truck size={18} /> },
-  { name: 'Categories', path: '/categories', icon: <Tag size={18} /> },
-  { name: 'Reports',    path: '/reports',    icon: <BarChart2 size={18} /> },
+  { name: 'Dashboard',      path: '/dashboard',  icon: <LayoutDashboard size={18} /> },
+  { name: 'Products',       path: '/products',   icon: <Package size={18} /> },
+  { name: 'Inventory',      path: '/inventory',  icon: <Archive size={18} /> },
+  { name: 'Purchase Orders',path: '/purchases',  icon: <ClipboardList size={18} /> },
+  { name: 'Sales',          path: '/sales',      icon: <ShoppingCart size={18} /> },
+  { name: 'Customers',      path: '/customers',  icon: <Users size={18} /> },
+  { name: 'Suppliers',      path: '/suppliers',  icon: <Truck size={18} /> },
+  { name: 'Categories',     path: '/categories', icon: <Tag size={18} /> },
+  { name: 'Reports',        path: '/reports',    icon: <BarChart2 size={18} /> },
 ];
 
 // Admin-only nav items shown below a divider
@@ -101,15 +102,17 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
       </nav>
 
       <div className="p-4 border-t border-border shrink-0">
-        <div className="flex items-center gap-3 mb-3 px-1">
+        <Link to="/profile" onClick={onClose}
+          className="flex items-center gap-3 mb-3 px-1 rounded-lg hover:bg-muted transition-colors p-1 -mx-1 group">
           <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">
             {user?.name?.charAt(0).toUpperCase() || 'U'}
           </div>
-          <div className="flex flex-col min-w-0">
+          <div className="flex flex-col min-w-0 flex-1">
             <span className="text-sm font-medium text-foreground truncate">{user?.name || 'User'}</span>
             <span className="text-xs text-muted-foreground">{user?.role || 'Role'}</span>
           </div>
-        </div>
+          <UserCircle size={15} className="text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </Link>
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 rounded-lg transition-colors"

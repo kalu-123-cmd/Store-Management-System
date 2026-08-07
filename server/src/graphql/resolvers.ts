@@ -266,6 +266,32 @@ export const resolvers = {
       return Object.values(byCategory).sort((a, b) => b.revenue - a.revenue);
     },
 
+    // ── PurchaseOrder queries ───────────────────────────────────────────────
+
+    purchaseOrders: async (_: any, __: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const orders = await prisma.purchaseOrder.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { supplier: true, user: true, items: { include: { product: true } } },
+      });
+      return orders.map((o: any) => ({
+        ...o,
+        totalCost: o.items.reduce((s: number, i: any) => s + i.unitCost * i.quantity, 0),
+        createdAt: o.createdAt.toISOString(),
+        updatedAt: o.updatedAt.toISOString(),
+      }));
+    },
+
+    purchaseOrder: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const o = await prisma.purchaseOrder.findUnique({
+        where: { id },
+        include: { supplier: true, user: true, items: { include: { product: true } } },
+      });
+      if (!o) throw new Error('Purchase order not found');
+      return { ...o, totalCost: o.items.reduce((s: number, i: any) => s + i.unitCost * i.quantity, 0), createdAt: o.createdAt.toISOString(), updatedAt: o.updatedAt.toISOString() };
+    },
+
     // ── TraditionalItem queries ─────────────────────────────────────────────
 
     traditionalItems: async (_: any, { search, category, region }: any, { prisma, user }: any) => {
@@ -478,14 +504,20 @@ export const resolvers = {
     createSale: async (_: any, { customerId, items }: any, { prisma, user }: any) => {
       requireAuth(user);
 
-      // Validate stock
       for (const item of items) {
         const product = await prisma.product.findUnique({ where: { id: item.productId } });
         if (!product) throw new Error(`Product ${item.productId} not found`);
         if (product.stock < item.quantity) throw new Error(`Insufficient stock for ${product.name}`);
       }
 
-      const invoiceNo = `INV-${Date.now()}`;
+      // Generate sequential invoice number INV-0001, INV-0002 …
+      const lastSale = await prisma.sale.findFirst({ orderBy: { createdAt: 'desc' } });
+      let nextNum = 1;
+      if (lastSale?.invoiceNo) {
+        const match = lastSale.invoiceNo.match(/INV-(\d+)$/);
+        if (match) nextNum = parseInt(match[1], 10) + 1;
+      }
+      const invoiceNo = `INV-${String(nextNum).padStart(4, '0')}`;
       const totalAmount = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
 
       const sale = await prisma.sale.create({
@@ -559,6 +591,23 @@ export const resolvers = {
       return { ...saleReturn, createdAt: saleReturn.createdAt.toISOString() };
     },
 
+    updateProfile: async (_: any, { name, currentPassword, newPassword }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const existing = await prisma.user.findUnique({ where: { id: user.id } });
+      if (!existing) throw new Error('User not found');
+      const valid = await bcrypt.compare(currentPassword, existing.password);
+      if (!valid) throw new Error('Current password is incorrect');
+      const data: any = {};
+      if (name) data.name = name;
+      if (newPassword) {
+        if (newPassword.length < 6) throw new Error('New password must be at least 6 characters');
+        data.password = await bcrypt.hash(newPassword, 10);
+      }
+      const updated = await prisma.user.update({ where: { id: user.id }, data });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'PROFILE_UPDATED', details: 'User updated their profile' } });
+      return { ...updated, createdAt: updated.createdAt.toISOString() };
+    },
+
     createUser: async (_: any, { name, email, password, role }: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN');
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -584,6 +633,80 @@ export const resolvers = {
       if (!target) throw new Error('User not found');
       await prisma.user.delete({ where: { id } });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_DELETED', details: `Deleted user: ${target.name}` } });
+      return true;
+    },
+
+    // ── PurchaseOrder mutations ─────────────────────────────────────────────
+
+    createPurchaseOrder: async (_: any, { supplierId, notes, items }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+
+      // Auto-generate PO number: PO-0001, PO-0002 …
+      const last = await prisma.purchaseOrder.findFirst({ orderBy: { createdAt: 'desc' } });
+      let nextNum = 1;
+      if (last?.poNumber) {
+        const match = last.poNumber.match(/PO-(\d+)$/);
+        if (match) nextNum = parseInt(match[1], 10) + 1;
+      }
+      const poNumber = `PO-${String(nextNum).padStart(4, '0')}`;
+
+      const order = await prisma.purchaseOrder.create({
+        data: {
+          poNumber,
+          supplierId: supplierId || null,
+          notes: notes || null,
+          userId: user.id,
+          status: 'DRAFT',
+          items: { create: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity, unitCost: i.unitCost })) },
+        },
+        include: { supplier: true, user: true, items: { include: { product: true } } },
+      });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'PO_CREATED', details: `Created Purchase Order ${poNumber}` } });
+      return { ...order, totalCost: order.items.reduce((s: number, i: any) => s + i.unitCost * i.quantity, 0), createdAt: order.createdAt.toISOString(), updatedAt: order.updatedAt.toISOString() };
+    },
+
+    updatePurchaseOrderStatus: async (_: any, { id, status }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const order = await prisma.purchaseOrder.update({
+        where: { id },
+        data: { status },
+        include: { supplier: true, user: true, items: { include: { product: true } } },
+      });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'PO_STATUS_CHANGED', details: `PO ${order.poNumber} → ${status}` } });
+      return { ...order, totalCost: order.items.reduce((s: number, i: any) => s + i.unitCost * i.quantity, 0), createdAt: order.createdAt.toISOString(), updatedAt: order.updatedAt.toISOString() };
+    },
+
+    receivePurchaseOrder: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN', 'MANAGER');
+      const order = await prisma.purchaseOrder.findUnique({
+        where: { id },
+        include: { items: { include: { product: true } } },
+      });
+      if (!order) throw new Error('Purchase order not found');
+      if (order.status === 'RECEIVED') throw new Error('Already received');
+
+      // Add stock for each item
+      for (const item of order.items) {
+        await prisma.product.update({ where: { id: item.productId }, data: { stock: { increment: item.quantity } } });
+        await prisma.transaction.create({ data: { productId: item.productId, quantity: item.quantity, type: 'IN', notes: `PO ${order.poNumber}`, userId: user.id } });
+      }
+
+      const updated = await prisma.purchaseOrder.update({
+        where: { id },
+        data: { status: 'RECEIVED' },
+        include: { supplier: true, user: true, items: { include: { product: true } } },
+      });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'PO_RECEIVED', details: `Received Purchase Order ${order.poNumber} — stock updated` } });
+      return { ...updated, totalCost: updated.items.reduce((s: number, i: any) => s + i.unitCost * i.quantity, 0), createdAt: updated.createdAt.toISOString(), updatedAt: updated.updatedAt.toISOString() };
+    },
+
+    deletePurchaseOrder: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      const order = await prisma.purchaseOrder.findUnique({ where: { id } });
+      if (!order) throw new Error('Not found');
+      if (order.status === 'RECEIVED') throw new Error('Cannot delete a received purchase order');
+      await prisma.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
+      await prisma.purchaseOrder.delete({ where: { id } });
       return true;
     },
 
