@@ -1,12 +1,68 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList, Barcode } from 'lucide-react';
+import { useQuery, gql } from '@apollo/client';
+import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList, Barcode, Building2, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
 import { useLangContext } from '../lib/LangContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import StockAlertBell from './StockAlertBell';
+
+const GET_BRANCHES = gql`query { branches { id name isActive } }`;
+
+function BranchSelector() {
+  const { data } = useQuery(GET_BRANCHES, { errorPolicy: 'ignore' });
+  const [open, setOpen] = useState(false);
+  const branches = (data?.branches || []).filter((b: any) => b.isActive);
+
+  const [activeBranch, setActiveBranch] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('active-branch') || 'null'); } catch { return null; }
+  });
+
+  const current = activeBranch || branches[0] || null;
+
+  const select = (b: any) => {
+    setActiveBranch(b);
+    localStorage.setItem('active-branch', JSON.stringify(b));
+    setOpen(false);
+  };
+
+  if (branches.length <= 1) return null;
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted transition-colors text-sm max-w-[140px]">
+        <Building2 size={13} className="text-muted-foreground shrink-0" />
+        <span className="text-xs font-medium text-foreground truncate">{current?.name || 'All Branches'}</span>
+        <ChevronDown size={11} className={`text-muted-foreground shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.12 }}
+              className="absolute right-0 top-10 w-48 bg-card border border-border rounded-xl shadow-2xl z-40 overflow-hidden p-1.5 space-y-0.5">
+              <button onClick={() => select(null)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${!activeBranch ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-muted text-foreground'}`}>
+                All Branches
+              </button>
+              {branches.map((b: any) => (
+                <button key={b.id} onClick={() => select(b)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${activeBranch?.id === b.id ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-muted text-foreground'}`}>
+                  <Building2 size={13} className="shrink-0 text-muted-foreground" />
+                  {b.name}
+                </button>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 const navItems = [
   { name: 'Dashboard',       path: '/dashboard',  icon: <LayoutDashboard size={18} /> },
@@ -23,7 +79,8 @@ const navItems = [
 
 // Admin-only nav items shown below a divider
 const adminItems = [
-  { name: 'Users', path: '/users', icon: <UserCog size={18} /> },
+  { name: 'Users',    path: '/users',    icon: <UserCog    size={18} /> },
+  { name: 'Branches', path: '/branches', icon: <Building2  size={18} /> },
 ];
 
 // Ethiopian section
@@ -173,8 +230,9 @@ export default function Layout() {
             <h1 className="text-base font-semibold text-foreground">{currentPage}</h1>
           </div>
 
-          {/* Header right: stock alerts + language switcher + dark mode */}
+          {/* Header right: branch selector + stock alerts + language switcher + dark mode */}
           <div className="flex items-center gap-1.5">
+            <BranchSelector />
             <StockAlertBell />
             <LanguageSwitcher lang={lang} setLang={setLang} />
             <button

@@ -11,6 +11,7 @@ import { onError } from '@apollo/client/link/error'
 import { BrowserRouter } from 'react-router-dom'
 import { ToastProvider } from './components/Toast.tsx'
 import { LangProvider } from './lib/LangContext.tsx'
+import PWAInstallPrompt from './components/PWAInstallPrompt.tsx'
 
 // ── HTTP link ────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
         <LangProvider>
           <ToastProvider>
             <App />
+            <PWAInstallPrompt />
           </ToastProvider>
         </LangProvider>
       </BrowserRouter>

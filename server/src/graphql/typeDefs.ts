@@ -158,6 +158,16 @@ export const typeDefs = `#graphql
     unitCost: Float!
   }
 
+  type Branch {
+    id: ID!
+    name: String!
+    address: String
+    phone: String
+    manager: String
+    isActive: Boolean!
+    createdAt: String!
+  }
+
   type DailySales {
     date: String!
     revenue: Float!
@@ -237,6 +247,9 @@ export const typeDefs = `#graphql
 
     purchaseOrders: [PurchaseOrder!]!
     purchaseOrder(id: ID!): PurchaseOrder
+
+    branches: [Branch!]!
+    branch(id: ID!): Branch
   }
 
   type Mutation {
@@ -305,6 +318,10 @@ export const typeDefs = `#graphql
     updatePurchaseOrderStatus(id: ID!, status: String!): PurchaseOrder!
     receivePurchaseOrder(id: ID!): PurchaseOrder!
     deletePurchaseOrder(id: ID!): Boolean!
+
+    createBranch(name: String!, address: String, phone: String, manager: String): Branch!
+    updateBranch(id: ID!, name: String, address: String, phone: String, manager: String, isActive: Boolean): Branch!
+    deleteBranch(id: ID!): Boolean!
 
     createTraditionalItem(
       name: String!

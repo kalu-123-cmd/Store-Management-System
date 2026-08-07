@@ -22,9 +22,11 @@
     "graphql": "^16.14.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
+    "nodemailer": "^9.0.5",
     "prisma": "^5.22.0"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.5",
     "typescript": "^7.0.2"

@@ -156,7 +156,7 @@ model TraditionalItem {
   amharicName     String?
   region          String
   material        String?
-  category        String   // e.g. Clothing, Jewelry, Pottery, Weaving, Instrument
+  category        String
   description     String?
   culturalNote    String?
   imageUrl        String?
@@ -167,4 +167,14 @@ model TraditionalItem {
   status          String   @default("ACTIVE")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  address   String?
+  phone     String?
+  manager   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 }

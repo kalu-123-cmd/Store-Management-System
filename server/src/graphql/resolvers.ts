@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { sendSaleReceipt, sendLowStockAlert } from './email';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_jwt_key_12345';
 
@@ -266,6 +267,21 @@ export const resolvers = {
       return Object.values(byCategory).sort((a, b) => b.revenue - a.revenue);
     },
 
+    // ── Branch queries ──────────────────────────────────────────────────────
+
+    branches: async (_: any, __: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const branches = await prisma.branch.findMany({ orderBy: { name: 'asc' } });
+      return branches.map((b: any) => ({ ...b, createdAt: b.createdAt.toISOString() }));
+    },
+
+    branch: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireAuth(user);
+      const b = await prisma.branch.findUnique({ where: { id } });
+      if (!b) throw new Error('Branch not found');
+      return { ...b, createdAt: b.createdAt.toISOString() };
+    },
+
     // ── PurchaseOrder queries ───────────────────────────────────────────────
 
     purchaseOrders: async (_: any, __: any, { prisma, user }: any) => {
@@ -498,6 +514,13 @@ export const resolvers = {
         include: { product: true },
       });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'STOCK_ADJUSTED', details: `${type} ${quantity} units of ${product.name}` } });
+
+      // Check if any product is now at or below threshold and alert
+      const updatedProduct = await prisma.product.findUnique({ where: { id: productId } });
+      if (updatedProduct && updatedProduct.stock <= updatedProduct.minStockLevel) {
+        sendLowStockAlert([updatedProduct]).catch(() => {});
+      }
+
       return { ...txn, createdAt: txn.createdAt.toISOString() };
     },
 
@@ -537,6 +560,9 @@ export const resolvers = {
       }
 
       await prisma.activityLog.create({ data: { userId: user.id, action: 'SALE_COMPLETED', details: `Sale ${invoiceNo} for $${totalAmount}` } });
+
+      // Send receipt email if customer has email address
+      sendSaleReceipt({ ...sale, createdAt: sale.createdAt.toISOString() }).catch(() => {});
 
       return { ...sale, createdAt: sale.createdAt.toISOString() };
     },
@@ -707,6 +733,28 @@ export const resolvers = {
       if (order.status === 'RECEIVED') throw new Error('Cannot delete a received purchase order');
       await prisma.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
       await prisma.purchaseOrder.delete({ where: { id } });
+      return true;
+    },
+
+    createBranch: async (_: any, args: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      const b = await prisma.branch.create({ data: { name: args.name, address: args.address || null, phone: args.phone || null, manager: args.manager || null } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'BRANCH_CREATED', details: `Created branch: ${b.name}` } });
+      return { ...b, createdAt: b.createdAt.toISOString() };
+    },
+
+    updateBranch: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      const b = await prisma.branch.update({ where: { id }, data: { ...data, address: data.address || null, phone: data.phone || null, manager: data.manager || null } });
+      return { ...b, createdAt: b.createdAt.toISOString() };
+    },
+
+    deleteBranch: async (_: any, { id }: any, { prisma, user }: any) => {
+      requireRole(user, 'ADMIN');
+      const b = await prisma.branch.findUnique({ where: { id } });
+      if (!b) throw new Error('Branch not found');
+      await prisma.branch.delete({ where: { id } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'BRANCH_DELETED', details: `Deleted branch: ${b.name}` } });
       return true;
     },
 
