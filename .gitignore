@@ -51,3 +51,11 @@ Desktop.ini
 
 # Vite cache
 .vite/
+dev-dist/
+
+# Environment files — keep .env.production for Vercel config reference
+# but never commit secrets
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
