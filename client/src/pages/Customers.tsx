@@ -9,6 +9,7 @@ import { useForm } from 'react-hook-form';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
 import { fmt } from '../lib/currency';
+import { useLangContext } from '../lib/LangContext';
 
 // ── GraphQL ──────────────────────────────────────────────────────────────────
 
@@ -300,6 +301,7 @@ export default function Customers() {
   const [deleteCustomer]                = useMutation(DELETE_CUSTOMER);
   const { success, error: toastError }  = useToast();
   const { canMutate }                   = useRole();
+  const { t }                           = useLangContext();
   const all: any[]                      = data?.customers || [];
 
   const customers = all.filter(c =>
@@ -321,15 +323,15 @@ export default function Customers() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Customers</h2>
-          <p className="text-sm text-muted-foreground">{all.length} customers registered</p>
+          <h2 className="text-xl font-bold text-foreground">{t('customers')}</h2>
+          <p className="text-sm text-muted-foreground">{all.length} {t('customers').toLowerCase()} registered</p>
         </div>
         {canMutate && (
           <button
             onClick={() => { setEditCustomer(null); setModalOpen(true); }}
             className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
           >
-            <Plus size={16} /> Add Customer
+            <Plus size={16} /> {t('add')} {t('customer')}
           </button>
         )}
       </div>
@@ -346,7 +348,7 @@ export default function Customers() {
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search name or email…"
+                placeholder={`${t('search')} name or email…`}
                 className="w-full pl-9 pr-4 py-2 bg-background border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
@@ -357,7 +359,7 @@ export default function Customers() {
             <table className="w-full text-left text-sm">
               <thead className="bg-muted/30 text-muted-foreground text-xs uppercase border-b border-border">
                 <tr>
-                  {['Customer', 'Contact', 'Orders', 'Total Spent', 'Joined', 'Actions'].map(h => (
+                  {['Customer', 'Contact', t('sales'), 'Total Spent', 'Joined', 'Actions'].map(h => (
                     <th key={h} className="px-5 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>

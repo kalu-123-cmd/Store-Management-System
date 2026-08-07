@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList } from 'lucide-react';
+import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList, Barcode } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
@@ -9,15 +9,16 @@ import LanguageSwitcher from './LanguageSwitcher';
 import StockAlertBell from './StockAlertBell';
 
 const navItems = [
-  { name: 'Dashboard',      path: '/dashboard',  icon: <LayoutDashboard size={18} /> },
-  { name: 'Products',       path: '/products',   icon: <Package size={18} /> },
-  { name: 'Inventory',      path: '/inventory',  icon: <Archive size={18} /> },
-  { name: 'Purchase Orders',path: '/purchases',  icon: <ClipboardList size={18} /> },
-  { name: 'Sales',          path: '/sales',      icon: <ShoppingCart size={18} /> },
-  { name: 'Customers',      path: '/customers',  icon: <Users size={18} /> },
-  { name: 'Suppliers',      path: '/suppliers',  icon: <Truck size={18} /> },
-  { name: 'Categories',     path: '/categories', icon: <Tag size={18} /> },
-  { name: 'Reports',        path: '/reports',    icon: <BarChart2 size={18} /> },
+  { name: 'Dashboard',       path: '/dashboard',  icon: <LayoutDashboard size={18} /> },
+  { name: 'Products',        path: '/products',   icon: <Package size={18} /> },
+  { name: 'Inventory',       path: '/inventory',  icon: <Archive size={18} /> },
+  { name: 'Purchase Orders', path: '/purchases',  icon: <ClipboardList size={18} /> },
+  { name: 'Sales',           path: '/sales',      icon: <ShoppingCart size={18} /> },
+  { name: 'Customers',       path: '/customers',  icon: <Users size={18} /> },
+  { name: 'Suppliers',       path: '/suppliers',  icon: <Truck size={18} /> },
+  { name: 'Categories',      path: '/categories', icon: <Tag size={18} /> },
+  { name: 'Reports',         path: '/reports',    icon: <BarChart2 size={18} /> },
+  { name: 'Barcode Print',   path: '/barcodes',   icon: <Barcode size={18} /> },
 ];
 
 // Admin-only nav items shown below a divider

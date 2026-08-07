@@ -8,6 +8,7 @@ import {
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
 import { fmt } from '../lib/currency';
+import { useLangContext } from '../lib/LangContext';
 
 // ── GraphQL ───────────────────────────────────────────────────────────────────
 
@@ -398,6 +399,7 @@ export default function Sales() {
   const [search, setSearch]           = useState('');
   const [page, setPage]               = useState(0);
   const { data, loading, refetch }    = useQuery(GET_SALES_DATA, { fetchPolicy: 'cache-and-network' });
+  const { t }                         = useLangContext();
   const sales = data?.sales || [];
 
   const filtered = sales.filter((s: any) =>
@@ -412,12 +414,12 @@ export default function Sales() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Sales</h2>
+          <h2 className="text-xl font-bold text-foreground">{t('sales')}</h2>
           <p className="text-sm text-muted-foreground">{sales.length} total transactions</p>
         </div>
         <button onClick={() => setPosOpen(true)}
           className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors">
-          <Plus size={16} /> New Sale
+          <Plus size={16} /> {t('newSale')}
         </button>
       </div>
 
@@ -435,7 +437,7 @@ export default function Sales() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-muted/30 text-muted-foreground text-xs uppercase border-b border-border">
-              <tr>{['Invoice', 'Customer', 'Items', 'Total', 'Date', 'Cashier', 'Status', ''].map(h =>
+              <tr>{[t('invoice'), t('customer'), 'Items', t('total'), 'Date', t('cashier'), t('status'), ''].map(h =>
                 <th key={h} className="px-5 py-3 whitespace-nowrap">{h}</th>
               )}</tr>
             </thead>
@@ -470,7 +472,7 @@ export default function Sales() {
                           <RotateCcw size={11} /> Refunded
                         </span>
                       ) : (
-                        <span className="text-xs bg-emerald-500/10 text-emerald-600 px-2 py-1 rounded-full font-medium w-fit">Completed</span>
+                    <span className="text-xs bg-emerald-500/10 text-emerald-600 px-2 py-1 rounded-full font-medium w-fit">Completed</span>
                       )}
                     </td>
                     <td className="px-5 py-4">

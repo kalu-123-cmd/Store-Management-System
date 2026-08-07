@@ -5,6 +5,7 @@ import { Plus, Edit2, Trash2, X, Tag } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
+import { useLangContext } from '../lib/LangContext';
 
 const GET_CATEGORIES = gql`
   query { categories { id name description productCount } }
@@ -55,6 +56,7 @@ export default function Categories() {
   const [deleteCategory] = useMutation(DELETE_CATEGORY);
   const { success, error: toastError } = useToast();
   const { canMutate, canAdminDelete } = useRole();
+  const { t } = useLangContext();
   const categories = data?.categories || [];
 
   const handleDelete = async (id: string, name: string) => {
@@ -70,12 +72,12 @@ export default function Categories() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Categories</h2>
-          <p className="text-sm text-muted-foreground">{categories.length} categories total</p>
+          <h2 className="text-xl font-bold text-foreground">{t('categories')}</h2>
+          <p className="text-sm text-muted-foreground">{categories.length} {t('categories').toLowerCase()} total</p>
         </div>
         {canMutate && (
           <button onClick={() => { setEditCategory(null); setModalOpen(true); }} className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium">
-            <Plus size={16} /> Add Category
+            <Plus size={16} /> {t('add')} {t('category')}
           </button>
         )}
       </div>

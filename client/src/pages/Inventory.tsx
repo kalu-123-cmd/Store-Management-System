@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
 import { fmt, fmtInt } from '../lib/currency';
+import { useLangContext } from '../lib/LangContext';
 
 const GET_INVENTORY = gql`
   query GetInventory {
@@ -120,14 +121,14 @@ function AdjustModal({ open, onClose, products, refetch }: any) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Inventory() {
-  const [adjustOpen, setAdjustOpen]       = useState(false);
-  const [tab, setTab]                     = useState<'products' | 'transactions'>('products');
-  const [search, setSearch]               = useState('');
+  const [adjustOpen, setAdjustOpen]         = useState(false);
+  const [tab, setTab]                       = useState<'products' | 'transactions'>('products');
+  const [search, setSearch]                 = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [statusFilter, setStatusFilter]   = useState('');
-
+  const [statusFilter, setStatusFilter]     = useState('');
   const { data, loading, refetch } = useQuery(GET_INVENTORY, { fetchPolicy: 'cache-and-network' });
   const { canMutate } = useRole();
+  const { t } = useLangContext();
 
   const allProducts:   any[] = data?.products     || [];
   const categories:    any[] = data?.categories   || [];
@@ -155,13 +156,13 @@ export default function Inventory() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Inventory</h2>
+          <h2 className="text-xl font-bold text-foreground">{t('inventory')}</h2>
           <p className="text-sm text-muted-foreground">Stock management and movement tracking</p>
         </div>
         {canMutate && (
           <button onClick={() => setAdjustOpen(true)}
             className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors">
-            <SlidersHorizontal size={16} /> Adjust Stock
+            <SlidersHorizontal size={16} /> {t('filter')}
           </button>
         )}
       </div>
@@ -169,7 +170,7 @@ export default function Inventory() {
       {/* KPI Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-card border border-border rounded-xl p-5">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Inventory Value</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{t('inventoryValue')}</p>
           <p className="text-xl font-bold text-foreground">{fmtInt(totalValue)}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-5">
@@ -177,11 +178,11 @@ export default function Inventory() {
           <p className="text-xl font-bold text-foreground">{allProducts.length}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-5">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Low Stock</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{t('lowStock')}</p>
           <p className="text-xl font-bold text-amber-500">{lowStock.length}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-5">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Out of Stock</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{t('outOfStock')}</p>
           <p className="text-xl font-bold text-destructive">{outOfStock.length}</p>
         </div>
       </div>
@@ -307,7 +308,7 @@ export default function Inventory() {
                         p.stock <= p.minStockLevel ? 'bg-amber-500/10 text-amber-600' :
                         'bg-emerald-500/10 text-emerald-600'
                       }`}>
-                        {p.stock === 0 ? 'Out of Stock' : p.stock <= p.minStockLevel ? 'Low Stock' : 'In Stock'}
+                        {p.stock === 0 ? t('outOfStock') : p.stock <= p.minStockLevel ? t('lowStock') : t('inStock')}
                       </span>
                     </td>
                   </motion.tr>

@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Package, TrendingUp, DollarSign, Users, ShoppingCart,
-  AlertTriangle, BarChart2, Layers, ArrowRight, ChevronLeft, ChevronRight,
+  AlertTriangle, BarChart2, Layers, ArrowRight, ChevronLeft, ChevronRight, FileDown,
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -50,6 +50,70 @@ const GET_ACTIVITY = gql`
 
 import { fmtCompact, fmt, fmtInt } from '../lib/currency';
 import { useLangContext } from '../lib/LangContext';
+
+// ── Dashboard PDF print ───────────────────────────────────────────────────────
+function printDashboardPDF(stats: any, chartData: any[], catData: any[], recentSales: any[]) {
+  const rows = recentSales.map(s =>
+    `<tr><td>${s.invoiceNo}</td><td>${s.customer?.name || 'Walk-in'}</td><td>${fmt(s.totalAmount)}</td><td>${new Date(s.createdAt).toLocaleDateString()}</td></tr>`
+  ).join('');
+
+  const cats = catData.map(c =>
+    `<tr><td>${c.name}</td><td>${fmt(c.revenue)}</td><td>${c.count}</td></tr>`
+  ).join('');
+
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (!w) return;
+  w.document.write(`
+    <html><head><title>StoreOS Dashboard Report</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 12px; }
+      h1 { font-size: 22px; margin-bottom: 4px; color: #1d4ed8; }
+      .sub { color: #666; margin-bottom: 24px; font-size: 11px; }
+      .kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
+      .kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; }
+      .kpi-label { font-size: 10px; text-transform: uppercase; color: #666; margin-bottom: 4px; }
+      .kpi-value { font-size: 20px; font-weight: bold; color: #111; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th { background: #f1f5f9; text-align: left; padding: 8px; font-size: 10px; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
+      td { padding: 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
+      h2 { font-size: 14px; margin: 24px 0 8px; color: #1d4ed8; }
+      .flag { display: inline-flex; gap: 2px; margin-left: 8px; }
+      .flag span { display: inline-block; width: 8px; height: 14px; }
+      @media print { button { display: none; } }
+    </style></head>
+    <body onload="window.print()">
+      <h1>StoreOS Dashboard Report
+        <span class="flag">
+          <span style="background:#2d6a2d"></span>
+          <span style="background:#f0b90b"></span>
+          <span style="background:#c41e1e"></span>
+        </span>
+      </h1>
+      <p class="sub">Generated: ${new Date().toLocaleString()} · Ethiopian Store Management System</p>
+
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-label">Monthly Revenue</div><div class="kpi-value">${fmt(stats?.monthlyRevenue || 0)}</div></div>
+        <div class="kpi"><div class="kpi-label">Monthly Profit</div><div class="kpi-value">${fmt(stats?.monthlyProfit || 0)}</div></div>
+        <div class="kpi"><div class="kpi-label">Today's Sales</div><div class="kpi-value">${fmt(stats?.todaySales || 0)}</div></div>
+        <div class="kpi"><div class="kpi-label">Inventory Value</div><div class="kpi-value">${fmtInt(stats?.inventoryValue || 0)}</div></div>
+        <div class="kpi"><div class="kpi-label">Total Products</div><div class="kpi-value">${stats?.totalProducts || 0}</div></div>
+        <div class="kpi"><div class="kpi-label">Total Customers</div><div class="kpi-value">${stats?.totalCustomers || 0}</div></div>
+        <div class="kpi"><div class="kpi-label">Low Stock</div><div class="kpi-value">${stats?.lowStockCount || 0}</div></div>
+        <div class="kpi"><div class="kpi-label">Out of Stock</div><div class="kpi-value">${stats?.outOfStockCount || 0}</div></div>
+      </div>
+
+      <h2>Recent Sales</h2>
+      <table><thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Date</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4">No sales yet.</td></tr>'}</tbody></table>
+
+      <h2>Sales by Category</h2>
+      <table><thead><tr><th>Category</th><th>Revenue</th><th>Items Sold</th></tr></thead>
+      <tbody>${cats || '<tr><td colspan="3">No data.</td></tr>'}</tbody></table>
+    </body></html>
+  `);
+  w.document.close();
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -133,8 +197,19 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-
-      {/* ── KPI Row 1 ── */}
+      {/* Top bar with PDF button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">{t('dashboard')}</h2>
+          <p className="text-xs text-muted-foreground">StoreOS · {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        </div>
+        <button
+          onClick={() => printDashboardPDF(stats, chartData, catData, recentSales)}
+          className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors"
+        >
+          <FileDown size={14} /> Export PDF
+        </button>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard title={t('revenue')}        value={fmt(stats?.monthlyRevenue || 0)}   icon={<DollarSign size={20} className="text-primary" />}        color="bg-primary/10"   delay={0} />
         <KPICard title={t('profit')}          value={fmt(stats?.monthlyProfit || 0)}    icon={<TrendingUp size={20} className="text-emerald-500" />}    color="bg-emerald-500/10" delay={0.07} />

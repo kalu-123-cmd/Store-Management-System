@@ -5,6 +5,7 @@ import { Plus, Edit2, Trash2, X, Truck, Mail, Phone, MapPin } from 'lucide-react
 import { useForm } from 'react-hook-form';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
+import { useLangContext } from '../lib/LangContext';
 
 const GET_SUPPLIERS = gql`
   query { suppliers { id name contactName email phone address } }
@@ -56,6 +57,7 @@ export default function Suppliers() {
   const [deleteSupplier] = useMutation(DELETE_SUPPLIER);
   const { success, error: toastError } = useToast();
   const { canMutate, canAdminDelete } = useRole();
+  const { t } = useLangContext();
   const suppliers = data?.suppliers || [];
 
   const handleDelete = async (id: string, name: string) => {
@@ -71,12 +73,12 @@ export default function Suppliers() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Suppliers</h2>
-          <p className="text-sm text-muted-foreground">{suppliers.length} suppliers registered</p>
+          <h2 className="text-xl font-bold text-foreground">{t('suppliers')}</h2>
+          <p className="text-sm text-muted-foreground">{suppliers.length} {t('suppliers').toLowerCase()} registered</p>
         </div>
         {canMutate && (
           <button onClick={() => { setEditSupplier(null); setModalOpen(true); }} className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium">
-            <Plus size={16} /> Add Supplier
+            <Plus size={16} /> {t('add')} {t('supplier')}
           </button>
         )}
       </div>

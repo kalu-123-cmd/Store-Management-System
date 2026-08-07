@@ -8,6 +8,7 @@ import {
 import { FileDown, TrendingUp, Package, DollarSign, ShoppingCart, Percent } from 'lucide-react';
 import { fmt, fmtCompact, fmtInt } from '../lib/currency';
 import { useToast } from '../components/Toast';
+import { useLangContext } from '../lib/LangContext';
 
 // ── GraphQL ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export default function Reports() {
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [activeRange, setActiveRange] = useState({ start: '', end: '' });
   const { info } = useToast();
+  const { t } = useLangContext();
 
   const { data, loading, refetch } = useQuery(GET_REPORTS, {
     variables: {
@@ -160,7 +162,7 @@ export default function Reports() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Reports &amp; Analytics</h2>
+          <h2 className="text-xl font-bold text-foreground">{t('reports')} &amp; Analytics</h2>
           <p className="text-sm text-muted-foreground">Business intelligence and export tools</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -207,16 +209,16 @@ export default function Reports() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
-          <StatCard label="Total Revenue"    value={fmt(totalRevenue)}           icon={<DollarSign size={16} className="text-primary" />}        color="bg-primary/10" />
+          <StatCard label={t('revenue')}      value={fmt(totalRevenue)}  icon={<DollarSign size={16} className="text-primary" />}     color="bg-primary/10" />
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 }}>
-          <StatCard label="Net Profit"       value={fmt(totalProfit)}            icon={<TrendingUp size={16} className="text-emerald-500" />}    color="bg-emerald-500/10" />
+          <StatCard label={t('profit')}       value={fmt(totalProfit)}   icon={<TrendingUp size={16} className="text-emerald-500" />} color="bg-emerald-500/10" />
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
-          <StatCard label="Profit Margin"    value={`${profitMargin.toFixed(1)}%`}           icon={<Percent size={16} className="text-violet-500" />}        color="bg-violet-500/10" />
+          <StatCard label={t('margin')}       value={`${profitMargin.toFixed(1)}%`} icon={<Percent size={16} className="text-violet-500" />} color="bg-violet-500/10" />
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.21 }}>
-          <StatCard label="Inventory Value"  value={fmtInt(inventoryValue)} icon={<Package size={16} className="text-amber-500" />} color="bg-amber-500/10" />
+          <StatCard label={t('inventoryValue')} value={fmtInt(inventoryValue)} icon={<Package size={16} className="text-amber-500" />} color="bg-amber-500/10" />
         </motion.div>
       </div>
 
