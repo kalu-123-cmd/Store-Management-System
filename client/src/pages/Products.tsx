@@ -101,7 +101,7 @@ const columnHelper = createColumnHelper<Product>();
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
-function ProductModal({ open, onClose, categories, suppliers, refetch, editProduct }: any) {
+function ProductModal({ open, onClose, categories, suppliers, products, refetch, editProduct }: any) {
   const { success, error: toastError } = useToast();
   const [imagePreview, setImagePreview] = useState('');
   const [imageTab, setImageTab] = useState<'url' | 'upload'>('url');
@@ -235,6 +235,14 @@ function ProductModal({ open, onClose, categories, suppliers, refetch, editProdu
                 <label className={lc}>SKU *</label>
                 <input {...register('sku')} placeholder="e.g. ELC-001" className={ic} />
                 {errors.sku && <p className={ec}>{errors.sku.message}</p>}
+                {/* Live duplicate SKU warning */}
+                {watch('sku') && products.some((p: any) =>
+                  p.sku === watch('sku') && p.id !== editProduct?.id
+                ) && (
+                  <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                    ⚠ SKU "{watch('sku')}" already exists — choose a different one
+                  </p>
+                )}
               </div>
             </div>
 
@@ -689,7 +697,7 @@ export default function Products() {
       </div>
 
       <ProductModal open={modalOpen} onClose={() => { setModalOpen(false); setEditProduct(null); }}
-        categories={categories} suppliers={suppliers} refetch={refetch} editProduct={editProduct} />
+        categories={categories} suppliers={suppliers} products={products} refetch={refetch} editProduct={editProduct} />
     </div>
   );
 }

@@ -363,7 +363,16 @@ export const resolvers = {
     createProduct: async (_: any, args: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
 
-      // Sanitise optional fields — empty strings must become null/undefined
+      // Check for duplicate SKU before attempting insert
+      const existing = await prisma.product.findUnique({ where: { sku: args.sku } });
+      if (existing) throw new Error(`SKU "${args.sku}" already exists. Please use a different SKU.`);
+
+      // Check duplicate barcode only if one was provided
+      if (args.barcode) {
+        const barcodeExists = await prisma.product.findUnique({ where: { barcode: args.barcode } });
+        if (barcodeExists) throw new Error(`Barcode "${args.barcode}" is already assigned to "${barcodeExists.name}".`);
+      }
+
       const data: any = {
         name:          args.name,
         sku:           args.sku,
@@ -374,11 +383,9 @@ export const resolvers = {
         minStockLevel: args.minStockLevel ?? 10,
         status:        args.status        ?? 'ACTIVE',
         description:   args.description   || null,
-        imageUrl:      args.imageUrl       || null,
-        // barcode is unique — must be null not empty string
-        barcode:       args.barcode        || null,
-        // supplierId must be null when not provided
-        supplierId:    args.supplierId     || null,
+        imageUrl:      args.imageUrl      || null,
+        barcode:       args.barcode       || null,
+        supplierId:    args.supplierId    || null,
       };
 
       const p = await prisma.product.create({
@@ -392,12 +399,27 @@ export const resolvers = {
     updateProduct: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
 
+      // Check SKU uniqueness if SKU is being changed
+      if (args.sku) {
+        const skuConflict = await prisma.product.findFirst({
+          where: { sku: args.sku, NOT: { id } },
+        });
+        if (skuConflict) throw new Error(`SKU "${args.sku}" is already used by "${skuConflict.name}".`);
+      }
+
+      // Check barcode uniqueness if barcode is being changed
+      if (args.barcode) {
+        const barcodeConflict = await prisma.product.findFirst({
+          where: { barcode: args.barcode, NOT: { id } },
+        });
+        if (barcodeConflict) throw new Error(`Barcode "${args.barcode}" is already assigned to "${barcodeConflict.name}".`);
+      }
+
       const data: any = { ...args };
-      // Sanitise: empty string → null for unique/relation fields
-      if ('barcode'    in data) data.barcode    = data.barcode    || null;
-      if ('imageUrl'   in data) data.imageUrl   = data.imageUrl   || null;
+      if ('barcode'     in data) data.barcode     = data.barcode     || null;
+      if ('imageUrl'    in data) data.imageUrl    = data.imageUrl    || null;
       if ('description' in data) data.description = data.description || null;
-      if ('supplierId' in data) data.supplierId = data.supplierId || null;
+      if ('supplierId'  in data) data.supplierId  = data.supplierId  || null;
 
       const p = await prisma.product.update({
         where: { id },
