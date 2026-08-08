@@ -16,6 +16,8 @@ import Profile          from './pages/Profile';
 import PurchaseOrders   from './pages/PurchaseOrders';
 import BarcodePrint     from './pages/BarcodePrint';
 import Branches         from './pages/Branches';
+import AuditLog         from './pages/AuditLog';
+import Settings         from './pages/Settings';
 import NotFound         from './pages/NotFound';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -44,6 +46,8 @@ export default function App() {
         <Route path="purchases"   element={<PurchaseOrders  />} />
         <Route path="barcodes"    element={<BarcodePrint    />} />
         <Route path="branches"    element={<Branches        />} />
+        <Route path="audit"       element={<AuditLog        />} />
+        <Route path="settings"    element={<Settings        />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

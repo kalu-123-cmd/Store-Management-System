@@ -154,7 +154,11 @@ export const resolvers = {
 
     activityLogs: async (_: any, __: any, { prisma, user }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
-      const logs = await prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 50, include: { user: true } });
+      const logs = await prisma.activityLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        include: { user: true },
+      });
       return logs.map((l: any) => ({ ...l, createdAt: l.createdAt.toISOString() }));
     },
 
