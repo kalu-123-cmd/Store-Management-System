@@ -35,6 +35,7 @@ model User {
   notifications          Notification[]
   notificationPreference NotificationPreference?
   procurementRequests    ProcurementRequest[]
+  CreditAccount          CreditAccount[]
 }
 
 model Category {
@@ -60,6 +61,7 @@ model Supplier {
   productBatches  ProductBatch[]   @relation("SupplierBatches")
   importShipments ImportShipment[]
   supplier        ProductBatch[]
+  supplierPrices  SupplierPrice[]
 }
 
 // ============================================
@@ -70,12 +72,23 @@ model Supplier {
 // Note: These fields will be added via migration
 
 model Customer {
-  id        String   @id @default(uuid())
-  name      String
-  email     String?
-  phone     String?
-  sales     Sale[]
-  createdAt DateTime @default(now())
+  id            String         @id @default(uuid())
+  name          String
+  email         String?
+  phone         String?
+  address       String?
+  taxId         String? // Tax identification number
+  creditLimit   Float          @default(0) // Credit limit in ETB
+  currentDebt   Float          @default(0) // Current outstanding debt
+  riskScore     Int            @default(50) // Credit risk score (0-100)
+  status        String         @default("ACTIVE") // ACTIVE, SUSPENDED, BLACKLISTED
+  sales         Sale[]
+  creditAccount CreditAccount?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([status])
+  @@index([riskScore])
 }
 
 model Product {
@@ -109,6 +122,7 @@ model Product {
   branchStocks           BranchStock[]
   productBatches         ProductBatch[]
   importShipmentItems    ImportShipmentItem[]
+  supplierPrices         SupplierPrice[]
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
   StockTransferOrderItem StockTransferOrderItem[]
@@ -157,16 +171,29 @@ model Transaction {
 }
 
 model Sale {
-  id          String       @id @default(uuid())
-  invoiceNo   String       @unique
-  totalAmount Float
-  customerId  String?
-  customer    Customer?    @relation(fields: [customerId], references: [id])
-  userId      String
-  user        User         @relation(fields: [userId], references: [id])
-  items       SaleItem[]
-  returns     SaleReturn[]
-  createdAt   DateTime     @default(now())
+  id              String       @id @default(uuid())
+  invoiceNo       String       @unique
+  totalAmount     Float
+  subtotal        Float
+  vatAmount       Float // 15% Ethiopian VAT
+  customerId      String?
+  customer        Customer?    @relation(fields: [customerId], references: [id])
+  userId          String
+  user            User         @relation(fields: [userId], references: [id])
+  paymentMethod   String       @default("CASH") // CASH, CREDIT, TELEBIRR, CBE, CARD, BANK_TRANSFER
+  paymentStatus   String       @default("PAID") // PAID, PARTIAL, PENDING, CREDIT
+  creditAccountId String? // If paid on credit
+  branchId        String? // For multi-branch sales
+  notes           String?
+  items           SaleItem[]
+  returns         SaleReturn[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([customerId])
+  @@index([paymentMethod])
+  @@index([paymentStatus])
+  @@index([createdAt])
 }
 
 model SaleItem {
@@ -1194,6 +1221,97 @@ model Payment {
   @@index([provider])
   @@index([status])
   @@index([phoneNumber])
+}
+
+// ============================================
+// ETHIOPIAN CREDIT (ብርድር) MODELS (Smart Store OS Phase 3)
+// ============================================
+
+model CreditAccount {
+  id              String    @id @default(uuid())
+  customerId      String    @unique
+  customer        Customer  @relation(fields: [customerId], references: [id])
+  managerId       String? // User who manages this credit account
+  manager         User?     @relation(fields: [managerId], references: [id])
+  creditLimit     Float     @default(0) // Maximum credit in ETB
+  currentBalance  Float     @default(0) // Current outstanding balance
+  availableCredit Float // Computed: creditLimit - currentBalance
+  overdueBalance  Float     @default(0) // Balance past due date
+  riskScore       Int       @default(50) // Credit risk score (0-100)
+  status          String    @default("ACTIVE") // ACTIVE, SUSPENDED, BLACKLISTED
+  lastPaymentDate DateTime?
+  nextPaymentDue  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  creditPayments CreditPayment[]
+
+  @@index([customerId])
+  @@index([managerId])
+  @@index([status])
+  @@index([riskScore])
+}
+
+model CreditPayment {
+  id              String        @id @default(uuid())
+  creditAccountId String
+  creditAccount   CreditAccount @relation(fields: [creditAccountId], references: [id])
+  amount          Float
+  paymentMethod   String // CASH, TELEBIRR, CBE, BANK_TRANSFER
+  paymentDate     DateTime
+  referenceNumber String? // Bank/reference number
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([creditAccountId])
+  @@index([paymentDate])
+}
+
+model SupplierPrice {
+  id               String    @id @default(uuid())
+  supplierId       String
+  supplier         Supplier  @relation(fields: [supplierId], references: [id])
+  productId        String
+  product          Product   @relation(fields: [productId], references: [id])
+  unitPrice        Float
+  currency         String    @default("ETB")
+  minOrderQuantity Int       @default(1)
+  leadTimeDays     Int       @default(7)
+  effectiveFrom    DateTime
+  effectiveTo      DateTime?
+  isPreferred      Boolean   @default(false)
+  qualityScore     Float     @default(1.0) // 0.0 to 1.0
+  reliabilityScore Float     @default(1.0) // 0.0 to 1.0
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([supplierId, productId, effectiveFrom])
+  @@index([supplierId])
+  @@index([productId])
+  @@index([effectiveFrom])
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  entityType    String // Product, Customer, Sale, etc.
+  entityId      String
+  action        String // CREATE, UPDATE, DELETE, STOCK_IN, STOCK_OUT
+  userId        String
+  previousValue String? // JSON string of previous state
+  newValue      String? // JSON string of new state
+  ipAddress     String?
+  userAgent     String?
+  sessionId     String?
+  requestId     String?
+  metadata      String? // Additional context
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([action, createdAt])
+  @@index([ipAddress])
+  @@index([sessionId])
 }
 
 // ============================================

@@ -1,19 +1,22 @@
 /**
- * Inventory Service - High-Concurrency Pessimistic Row Locking
+ * Inventory Service - High-Concurrency Pessimistic Locking with FEFO
  * 
  * Enterprise-grade inventory management with database-level locking to prevent
  * race conditions and overselling during high-concurrency checkout scenarios.
+ * Enhanced with FEFO (First-Expired, First-Out) batch allocation for perishable goods.
  * 
  * Key Features:
  * - Pessimistic locking using SELECT ... FOR UPDATE (PostgreSQL)
+ * - FEFO batch allocation for perishable goods
  * - Exact financial calculations with Decimal precision
  * - Automatic VAT calculation (15% Ethiopian standard)
  * - Transaction isolation for data consistency
  * - Stock level validation with safety checks
  * - Comprehensive error handling and logging
+ * - Integration with ProductBatch for perishable goods
  * 
  * @author Principal Software Architect
- * @version 2.0.0 - Enterprise Edition
+ * @version 3.0.0 - Ethiopian Smart Store OS Edition
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -33,12 +36,19 @@ export interface StockOutRequest {
   branchId?: string;
   sessionId?: string;
   requestId?: string;
+  useFEFO?: boolean; // Enable FEFO batch allocation for perishable goods
 }
 
 export interface StockOutResult {
   success: boolean;
   transactionId?: string;
   remainingStock?: number;
+  batchAllocations?: Array<{
+    batchId: string;
+    batchNumber: string;
+    quantity: number;
+    expiryDate: Date;
+  }>;
   subtotal?: string;
   vatAmount?: string;
   totalAmount?: string;
@@ -200,6 +210,65 @@ export async function processStockOutAtomic(
         throw new Error(validation.error);
       }
 
+      // Step 2.5: FEFO Batch Allocation (if enabled and product has batches)
+      let batchAllocations: Array<{
+        batchId: string;
+        batchNumber: string;
+        quantity: number;
+        expiryDate: Date;
+      }> = [];
+
+      if (request.useFEFO) {
+        // Check if product has perishable batches
+        const batches = await tx.productBatch.findMany({
+          where: {
+            productId: request.productId,
+            status: 'ACTIVE',
+            quantity: { gt: 0 },
+          },
+          orderBy: {
+            expiryDate: 'asc', // Earliest expiry first (FEFO)
+          },
+          take: 10, // Limit to prevent excessive queries
+        });
+
+        if (batches.length > 0) {
+          let remainingQuantity = request.quantity;
+          
+          for (const batch of batches) {
+            if (remainingQuantity <= 0) break;
+            
+            const quantityToDeduct = Math.min(remainingQuantity, batch.quantity);
+            
+            // Deduct from batch
+            await tx.productBatch.update({
+              where: { id: batch.id },
+              data: {
+                quantity: {
+                  decrement: quantityToDeduct,
+                },
+                updatedAt: new Date(),
+              },
+            });
+
+            batchAllocations.push({
+              batchId: batch.id,
+              batchNumber: batch.batchNumber,
+              quantity: quantityToDeduct,
+              expiryDate: batch.expiryDate,
+            });
+
+            remainingQuantity -= quantityToDeduct;
+          }
+
+          // Check if we fulfilled the entire request from batches
+          if (remainingQuantity > 0) {
+            // Fall back to regular stock for remaining quantity
+            console.warn(`Insufficient batch stock, using regular stock for ${remainingQuantity} units`);
+          }
+        }
+      }
+
       // Step 3: Calculate financial amounts with exact precision
       const financials = calculateFinancials(product.sellingPrice, request.quantity);
 
@@ -256,6 +325,7 @@ export async function processStockOutAtomic(
         success: true,
         transactionId: transaction.id,
         remainingStock: updatedProduct.stock,
+        batchAllocations: batchAllocations.length > 0 ? batchAllocations : undefined,
         subtotal: financials.subtotal.toString(),
         vatAmount: financials.vatAmount.toString(),
         totalAmount: financials.totalAmount.toString(),
