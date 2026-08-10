@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { useMutation, gql } from '@apollo/client';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Package, Lock, Mail, ArrowRight, Sun, Moon } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Sun, Moon } from 'lucide-react';
 import { useDarkMode } from '../hooks/useDarkMode';
+import Logo from '../components/Logo';
 
 const LOGIN_MUTATION = gql`
   mutation Login($email: String!, $password: String!) {
@@ -58,10 +59,8 @@ export default function Login() {
       >
         <div className="p-8">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-4 text-primary">
-              <Package size={32} />
-            </div>
-            <h1 className="text-2xl font-bold text-foreground">StoreOS</h1>
+            <Logo variant="default" size="lg" />
+            <h1 className="text-2xl font-bold text-foreground mt-4">StoreOS Enterprise</h1>
             <p className="text-muted-foreground text-sm mt-1 text-center">Enter your credentials to access the management portal</p>
           </div>
 
