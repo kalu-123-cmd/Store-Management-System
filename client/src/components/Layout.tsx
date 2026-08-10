@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
-import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList, Barcode, Building2, ChevronDown, Shield, Settings as SettingsIcon } from 'lucide-react';
+import { Package, LayoutDashboard, ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList, Barcode, Building2, ChevronDown, Shield, Settings as SettingsIcon, FileText, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
@@ -75,13 +75,13 @@ const navItems = [
   { name: 'Categories',      path: '/categories', icon: <Tag size={18} /> },
   { name: 'Reports',         path: '/reports',    icon: <BarChart2 size={18} /> },
   { name: 'Barcode Print',   path: '/barcodes',   icon: <Barcode size={18} /> },
+  { name: 'Organizations',   path: '/organizations', icon: <Building2 size={18} /> },
+  { name: 'Procurement',     path: '/procurement', icon: <Briefcase size={18} /> },
 ];
 
 // Admin-only nav items shown below a divider
-// Admin-only nav items shown below a divider
 const adminItems = [
   { name: 'Users',     path: '/users',    icon: <UserCog   size={18} /> },
-  { name: 'Branches',  path: '/branches', icon: <Building2 size={18} /> },
   { name: 'Audit Log', path: '/audit',    icon: <Shield    size={18} /> },
   { name: 'Settings',  path: '/settings', icon: <SettingsIcon size={18} /> },
 ];

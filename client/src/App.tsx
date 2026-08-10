@@ -19,6 +19,8 @@ import Branches         from './pages/Branches';
 import AuditLog         from './pages/AuditLog';
 import Settings         from './pages/Settings';
 import NotFound         from './pages/NotFound';
+import Organizations    from './pages/Organizations';
+import Procurement      from './pages/Procurement';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token');
@@ -32,22 +34,24 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard"   element={<Dashboard       />} />
-        <Route path="products"    element={<Products        />} />
-        <Route path="sales"       element={<Sales           />} />
-        <Route path="customers"   element={<Customers       />} />
-        <Route path="suppliers"   element={<Suppliers       />} />
-        <Route path="categories"  element={<Categories      />} />
-        <Route path="inventory"   element={<Inventory       />} />
-        <Route path="reports"     element={<Reports         />} />
-        <Route path="users"       element={<Users           />} />
-        <Route path="traditional" element={<TraditionalItems />} />
-        <Route path="profile"     element={<Profile         />} />
-        <Route path="purchases"   element={<PurchaseOrders  />} />
-        <Route path="barcodes"    element={<BarcodePrint    />} />
-        <Route path="branches"    element={<Branches        />} />
-        <Route path="audit"       element={<AuditLog        />} />
-        <Route path="settings"    element={<Settings        />} />
+        <Route path="dashboard"       element={<Dashboard       />} />
+        <Route path="products"        element={<Products        />} />
+        <Route path="sales"           element={<Sales           />} />
+        <Route path="customers"       element={<Customers       />} />
+        <Route path="suppliers"       element={<Suppliers       />} />
+        <Route path="categories"      element={<Categories      />} />
+        <Route path="inventory"       element={<Inventory       />} />
+        <Route path="reports"         element={<Reports         />} />
+        <Route path="users"           element={<Users           />} />
+        <Route path="traditional"    element={<TraditionalItems />} />
+        <Route path="profile"         element={<Profile         />} />
+        <Route path="purchases"       element={<PurchaseOrders  />} />
+        <Route path="barcodes"        element={<BarcodePrint    />} />
+        <Route path="branches"        element={<Branches        />} />
+        <Route path="audit"           element={<AuditLog        />} />
+        <Route path="settings"        element={<Settings        />} />
+        <Route path="organizations"  element={<Organizations   />} />
+        <Route path="procurement"     element={<Procurement     />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

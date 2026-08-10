@@ -135,9 +135,9 @@ export default function Login() {
           <p className="text-xs text-muted-foreground font-medium text-center mb-2.5">Demo credentials</p>
           <div className="grid grid-cols-3 gap-2">
             {[
-              { role: 'Admin', email: 'admin@store.com', password: 'admin123' },
-              { role: 'Manager', email: 'manager@store.com', password: 'manager123' },
-              { role: 'Cashier', email: 'cashier@store.com', password: 'cashier123' },
+              { role: 'Admin', email: 'admin@storemanagement.com', password: 'admin123' },
+              { role: 'Manager', email: 'manager@storemanagement.com', password: 'manager123' },
+              { role: 'Cashier', email: 'cashier@storemanagement.com', password: 'cashier123' },
             ].map(cred => (
               <button
                 key={cred.role}

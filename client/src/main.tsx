@@ -12,6 +12,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { ToastProvider } from './components/Toast.tsx'
 import { LangProvider } from './lib/LangContext.tsx'
 import PWAInstallPrompt from './components/PWAInstallPrompt.tsx'
+import './i18n/config' // Initialize i18next
 
 // ── HTTP link ────────────────────────────────────────────────────────────────
 
