@@ -2,18 +2,18 @@
  * Unified StoreOS Branding Component
  * 
  * This component provides a consistent, professional brand identity
- * for the StoreOS Enterprise platform with custom SVG graphics.
+ * for the StoreOS AI Powered Retail platform with custom SVG graphics.
  * 
  * Key Features:
  * - Custom geometric 3D box/cube layer dynamics
  * - Gradient backgrounds (blue-600 → indigo-600 → violet-500)
- * - Clean typography with "StoreOS Enterprise" branding
+ * - Clean typography with "StoreOS AI Powered Retail" branding
  * - Multiple variants: Default, Compact, Light, Dark
  * - Responsive sizing for different UI contexts
  * - Accessibility compliant with proper alt text
  * 
  * @author Principal Software Architect
- * @version 2.0.0 - Enterprise Edition
+ * @version 3.0.0 - AI Powered Retail Edition
  */
 
 import React from 'react';
@@ -226,7 +226,7 @@ export function Logo({
             className="text-[10px] font-medium text-muted-foreground tracking-wider"
             style={{ fontSize: `${Math.max(10, fontSize - 4)}px` }}
           >
-            ENTERPRISE
+            AI POWERED RETAIL
           </span>
         </div>
       )}

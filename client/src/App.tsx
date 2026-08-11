@@ -11,7 +11,7 @@ import Categories       from './pages/Categories';
 import Inventory        from './pages/Inventory';
 import Reports          from './pages/Reports';
 import Users            from './pages/Users';
-import TraditionalItems from './pages/TraditionalItems';
+import AIDashboard      from './pages/AIDashboard';
 import Profile          from './pages/Profile';
 import PurchaseOrders   from './pages/PurchaseOrders';
 import BarcodePrint     from './pages/BarcodePrint';
@@ -43,7 +43,7 @@ export default function App() {
         <Route path="inventory"       element={<Inventory       />} />
         <Route path="reports"         element={<Reports         />} />
         <Route path="users"           element={<Users           />} />
-        <Route path="traditional"    element={<TraditionalItems />} />
+        <Route path="ai-dashboard"    element={<AIDashboard      />} />
         <Route path="profile"         element={<Profile         />} />
         <Route path="purchases"       element={<PurchaseOrders  />} />
         <Route path="barcodes"        element={<BarcodePrint    />} />

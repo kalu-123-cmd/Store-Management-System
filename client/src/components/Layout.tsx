@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
-import { ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList, Barcode, Building2, ChevronDown, Shield, Settings as SettingsIcon, FileText, Briefcase } from 'lucide-react';
+import { ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList, Barcode, Building2, ChevronDown, Shield, Settings as SettingsIcon, FileText, Briefcase, Brain } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
@@ -67,6 +67,7 @@ function BranchSelector() {
 
 const navItems = [
   { name: 'Dashboard',       path: '/dashboard',  icon: <BarChart2 size={18} /> },
+  { name: 'AI Intelligence', path: '/ai-dashboard', icon: <Brain size={18} /> },
   { name: 'Products',        path: '/products',   icon: <Archive size={18} /> },
   { name: 'Inventory',       path: '/inventory',  icon: <Tag size={18} /> },
   { name: 'Purchase Orders', path: '/purchases',  icon: <ClipboardList size={18} /> },
@@ -85,11 +86,6 @@ const adminItems = [
   { name: 'Users',     path: '/users',    icon: <UserCog   size={18} /> },
   { name: 'Audit Log', path: '/audit',    icon: <Shield    size={18} /> },
   { name: 'Settings',  path: '/settings', icon: <SettingsIcon size={18} /> },
-];
-
-// Ethiopian section
-const ethiopianItems = [
-  { name: 'Traditional Items', path: '/traditional', icon: <Star size={18} /> },
 ];
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -136,18 +132,6 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
       <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
         {navItems.map(item => <NavLink key={item.path} item={item} />)}
 
-        {/* Ethiopia section */}
-        <div className="my-2 border-t border-border" />
-        <p className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-          <span className="flex gap-0.5">
-            <span className="w-1.5 h-2.5 bg-green-600 rounded-sm inline-block" />
-            <span className="w-1.5 h-2.5 bg-yellow-400 rounded-sm inline-block" />
-            <span className="w-1.5 h-2.5 bg-red-600 rounded-sm inline-block" />
-          </span>
-          Ethiopia
-        </p>
-        {ethiopianItems.map(item => <NavLink key={item.path} item={item} />)}
-
         {/* Admin-only section */}
         {isAdmin && (
           <>
@@ -186,7 +170,7 @@ export default function Layout() {
   const [dark, setDark] = useDarkMode();
   const { lang, setLang, t } = useLangContext();
   const location = useLocation();
-  const allNavItems = [...navItems, ...adminItems, ...ethiopianItems];
+  const allNavItems = [...navItems, ...adminItems];
   const currentPage = allNavItems.find(item => location.pathname.startsWith(item.path))?.name || 'Dashboard';
 
   return (
@@ -227,7 +211,7 @@ export default function Layout() {
               <Menu size={20} />
             </button>
             <Logo variant="icon-only" size="sm" className="hidden md:block" />
-            <h1 className="text-base font-semibold text-foreground">{currentPage}</h1>
+            <h1 className="text-base font-semibold text-foreground">StoreOS • AI Powered Retail</h1>
           </div>
 
           {/* Header right: branch selector + stock alerts + language switcher + dark mode */}
