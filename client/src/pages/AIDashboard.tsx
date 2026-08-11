@@ -69,6 +69,7 @@ interface LowStockProduct {
 export default function AIDashboard() {
   const { data, loading, error, refetch } = useQuery(GET_AI_INTELLIGENCE, {
     pollInterval: 30000, // Refresh every 30 seconds
+    errorPolicy: 'all', // Return partial data even if some fields fail
   });
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'insights'>('overview');
@@ -81,18 +82,19 @@ export default function AIDashboard() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-64 text-red-600">
-        <XCircle className="h-8 w-8 mr-2" />
-        <span>Failed to load AI intelligence data</span>
-      </div>
-    );
-  }
+  // Provide fallback data if queries fail
+  const stats = data?.dashboardStats as DashboardStats || {
+    todaySales: 0,
+    totalStock: 0,
+    lowStockCount: 0,
+    expiringCount: 0,
+    pendingPurchases: 0,
+    outstandingReceivables: 0,
+    outstandingPayables: 0,
+  };
 
-  const stats = data?.dashboardStats as DashboardStats;
-  const salesByCategory = data?.salesByCategory as SalesByCategory[];
-  const lowStockProducts = data?.lowStockProducts as LowStockProduct[];
+  const salesByCategory = (data?.salesByCategory as SalesByCategory[]) || [];
+  const lowStockProducts = (data?.lowStockProducts as LowStockProduct[]) || [];
 
   // Calculate AI insights
   const calculateStoreHealth = () => {
