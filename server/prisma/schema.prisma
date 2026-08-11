@@ -55,6 +55,7 @@ model ImportHistory {
   created     Int
   updated     Int
   failed      Int
+  stockChanges Int     @default(0)
   status      String   // 'COMPLETED', 'PARTIAL', 'FAILED'
   errorMessage String?
   createdAt   DateTime @default(now())

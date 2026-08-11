@@ -78,6 +78,7 @@ export interface ImportResult {
     updated: number;
     skipped: number;
     failed: number;
+    stockChanges: number;
   };
   errors: Array<{
     rowNumber: number;
@@ -102,13 +103,13 @@ export interface ImportHistory {
   createdAt: Date;
 }
 
-// ── CSV Parser ───────────────────────────────────────────────────────────────────
+// ── CSV Parser with Column Normalization ─────────────────────────────────────────
 
 export function parseCSV(content: string): CSVRow[] {
   const lines = content.split('\n').filter(line => line.trim());
   if (lines.length === 0) return [];
 
-  const headers = parseCSVLine(lines[0]);
+  const headers = normalizeHeaders(parseCSVLine(lines[0]));
   const rows: CSVRow[] = [];
 
   for (let i = 1; i < lines.length; i++) {
@@ -123,6 +124,39 @@ export function parseCSV(content: string): CSVRow[] {
   }
 
   return rows;
+}
+
+// Normalize column headers to standard names
+function normalizeHeaders(headers: string[]): string[] {
+  const headerMap: Record<string, string> = {
+    'product name': 'name',
+    'product_name': 'name',
+    'productname': 'name',
+    'sku': 'sku',
+    'Sku': 'sku',
+    'SKU': 'sku',
+    'stock': 'stock',
+    'quantity': 'stock',
+    'currentstock': 'stock',
+    'current_stock': 'stock',
+    'cost price': 'costPrice',
+    'cost_price': 'costPrice',
+    'costprice': 'costPrice',
+    'selling price': 'sellingPrice',
+    'selling_price': 'sellingPrice',
+    'sellingprice': 'sellingPrice',
+    'price': 'sellingPrice',
+    'category': 'category',
+    'brand': 'brand',
+    'barcode': 'barcode',
+    'margin': 'margin',
+    'status': 'status',
+  };
+
+  return headers.map(header => {
+    const normalized = header.toLowerCase().trim();
+    return headerMap[normalized] || normalized;
+  });
 }
 
 function parseCSVLine(line: string): string[] {
@@ -152,9 +186,9 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-// ── Validation ───────────────────────────────────────────────────────────────────
+// ── Validation with Enhanced Rules ─────────────────────────────────────────────────
 
-export function validateProductRow(row: CSVRow, rowNumber: number): ImportValidationResult {
+export function validateProductRow(row: CSVRow, rowNumber: number, existingSKUs: Set<string>): ImportValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   
@@ -162,37 +196,54 @@ export function validateProductRow(row: CSVRow, rowNumber: number): ImportValida
   const sku = row['sku']?.trim() || '';
   const category = row['category']?.trim() || '';
   const stock = row['stock']?.trim() || '0';
-  const costPrice = row['costPrice']?.trim() || '0';
-  const sellingPrice = row['sellingPrice']?.trim() || '0';
+  const costPrice = row['costPrice']?.trim() || '';
+  const sellingPrice = row['sellingPrice']?.trim() || '';
   const margin = row['margin']?.trim();
+  const barcode = row['barcode']?.trim() || '';
 
   // Required fields
   if (!name) errors.push('Product name is required');
   if (!sku) errors.push('SKU is required');
-  if (!category) errors.push('Category is required');
 
-  // Numeric validation
-  const stockNum = parseInt(stock);
-  if (isNaN(stockNum) || stockNum < 0) {
-    errors.push('Stock must be a non-negative number');
+  // Check for duplicate SKU in this CSV batch
+  if (sku && existingSKUs.has(sku)) {
+    errors.push(`Duplicate SKU "${sku}" in CSV file`);
+  } else if (sku) {
+    existingSKUs.add(sku);
   }
 
-  const costPriceNum = parseFloat(costPrice);
-  if (isNaN(costPriceNum) || costPriceNum < 0) {
-    errors.push('Cost price must be a non-negative number');
+  // Numeric validation (only if field exists)
+  if (stock) {
+    const stockNum = parseInt(stock);
+    if (isNaN(stockNum) || stockNum < 0) {
+      errors.push('Stock must be a non-negative number');
+    }
   }
 
-  const sellingPriceNum = parseFloat(sellingPrice);
-  if (isNaN(sellingPriceNum) || sellingPriceNum < 0) {
-    errors.push('Selling price must be a non-negative number');
+  if (costPrice) {
+    const costPriceNum = parseFloat(costPrice);
+    if (isNaN(costPriceNum) || costPriceNum < 0) {
+      errors.push('Cost price must be a non-negative number');
+    }
   }
 
-  // Business logic validation
-  if (!isNaN(costPriceNum) && !isNaN(sellingPriceNum) && sellingPriceNum < costPriceNum) {
-    warnings.push('Selling price is below cost price (loss-making product)');
+  if (sellingPrice) {
+    const sellingPriceNum = parseFloat(sellingPrice);
+    if (isNaN(sellingPriceNum) || sellingPriceNum < 0) {
+      errors.push('Selling price must be a non-negative number');
+    }
   }
 
-  // Margin validation
+  // Business logic validation (only if both prices exist)
+  if (costPrice && sellingPrice) {
+    const costPriceNum = parseFloat(costPrice);
+    const sellingPriceNum = parseFloat(sellingPrice);
+    if (sellingPriceNum < costPriceNum) {
+      warnings.push('Selling price is below cost price (loss-making product)');
+    }
+  }
+
+  // Margin validation (only if provided)
   if (margin) {
     const marginNum = parseFloat(margin);
     if (isNaN(marginNum)) {
@@ -203,14 +254,19 @@ export function validateProductRow(row: CSVRow, rowNumber: number): ImportValida
   }
 
   // SKU format validation
-  if (sku && !/^[A-Z0-9-]+$/.test(sku)) {
-    warnings.push('SKU contains non-standard characters (recommended: uppercase letters, numbers, hyphens)');
+  if (sku && !/^[A-Z0-9-_]+$/.test(sku)) {
+    warnings.push('SKU contains non-standard characters (recommended: uppercase letters, numbers, hyphens, underscores)');
+  }
+
+  // Barcode validation (if provided)
+  if (barcode && !/^[A-Z0-9-_]+$/.test(barcode)) {
+    warnings.push('Barcode contains non-standard characters');
   }
 
   return {
     isValid: errors.length === 0,
     rowNumber,
-    data: { name, sku, category, stock, costPrice, sellingPrice, margin },
+    data: { name, sku, category, stock, costPrice, sellingPrice, margin, barcode },
     errors,
     warnings,
     action: 'ERROR', // Will be determined by SKU check
@@ -264,7 +320,7 @@ export class CSVImportService {
   constructor(private prisma: PrismaClient) {}
 
   /**
-   * Preview product CSV import
+   * Preview product CSV import with duplicate detection
    */
   async previewProductImport(csvContent: string, userId: string): Promise<ImportPreview> {
     const rows = parseCSV(csvContent);
@@ -273,14 +329,15 @@ export class CSVImportService {
     let updateCount = 0;
     let skipCount = 0;
 
-    // Get existing SKUs
+    // Get existing SKUs and products
     const existingProducts = await this.prisma.product.findMany({
-      select: { sku: true, id: true, name: true },
+      select: { sku: true, id: true, name: true, stock: true, costPrice: true, sellingPrice: true },
     });
     const existingSKUs = new Map(existingProducts.map(p => [p.sku, p]));
+    const csvSKUs = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
-      const validation = validateProductRow(rows[i], i + 1);
+      const validation = validateProductRow(rows[i], i + 1, csvSKUs);
       
       if (!validation.isValid) {
         validation.action = 'ERROR';
@@ -316,7 +373,7 @@ export class CSVImportService {
   }
 
   /**
-   * Execute product CSV import
+   * Execute product CSV import with automatic synchronization
    */
   async importProducts(csvContent: string, userId: string): Promise<ImportResult> {
     try {
@@ -326,10 +383,11 @@ export class CSVImportService {
         let created = 0;
         let updated = 0;
         let skipped = 0;
+        let stockChanges = 0;
 
         // Get existing products and categories
         const existingProducts = await tx.product.findMany({
-          select: { sku: true, id: true, name: true },
+          select: { sku: true, id: true, name: true, stock: true, costPrice: true, sellingPrice: true, categoryId: true },
         });
         const existingSKUs = new Map(existingProducts.map(p => [p.sku, p]));
 
@@ -350,13 +408,13 @@ export class CSVImportService {
           }
 
           const data = validation.data as ProductCSVRow;
-          const stock = parseInt(data.stock);
-          const costPrice = parseFloat(data.costPrice);
-          const sellingPrice = parseFloat(data.sellingPrice);
+          const stock = data.stock ? parseInt(data.stock) : 0;
+          const costPrice = data.costPrice ? parseFloat(data.costPrice) : null;
+          const sellingPrice = data.sellingPrice ? parseFloat(data.sellingPrice) : null;
 
           // Find or create category
           let categoryId = categoryMap.get(data.category.toLowerCase());
-          if (!categoryId) {
+          if (!categoryId && data.category) {
             const newCategory = await tx.category.create({
               data: { name: data.category },
             });
@@ -370,12 +428,13 @@ export class CSVImportService {
               data: {
                 name: data.name,
                 sku: data.sku,
-                categoryId,
-                costPrice,
-                sellingPrice,
+                categoryId: categoryId || null,
+                costPrice: costPrice || 0,
+                sellingPrice: sellingPrice || 0,
                 stock,
                 minStockLevel: 10,
                 status: 'ACTIVE',
+                barcode: data.barcode || null,
               },
             });
 
@@ -385,43 +444,58 @@ export class CSVImportService {
                 productId: newProduct.id,
                 quantity: stock,
                 type: 'IN',
-                notes: 'Initial CSV import',
+                notes: 'CSV SYNCHRONIZATION - Initial import',
                 userId,
-                unitPrice: costPrice,
-                subtotal: stock * costPrice,
-                vatAmount: stock * costPrice * 0.15,
-                totalAmount: stock * costPrice * 1.15,
+                unitPrice: costPrice || 0,
+                subtotal: stock * (costPrice || 0),
+                vatAmount: stock * (costPrice || 0) * 0.15,
+                totalAmount: stock * (costPrice || 0) * 1.15,
               },
             });
 
             created++;
+            stockChanges++;
           } else if (validation.action === 'UPDATE') {
-            // Update existing product
+            // Update existing product - only update fields that exist in CSV
             const existingProduct = existingSKUs.get(data.sku);
             if (existingProduct) {
+              const updateData: any = {};
+              
+              // Only update fields that are provided in CSV
+              if (data.name) updateData.name = data.name;
+              if (categoryId) updateData.categoryId = categoryId;
+              if (costPrice !== null) updateData.costPrice = costPrice;
+              if (sellingPrice !== null) updateData.sellingPrice = sellingPrice;
+              if (data.stock !== undefined) updateData.stock = stock;
+              if (data.barcode) updateData.barcode = data.barcode;
+
+              // Track stock change
+              const previousStock = existingProduct.stock;
+              const stockChanged = data.stock !== undefined && previousStock !== stock;
+
               await tx.product.update({
                 where: { id: existingProduct.id },
-                data: {
-                  costPrice,
-                  sellingPrice,
-                  stock,
-                },
+                data: updateData,
               });
 
-              // Create stock adjustment movement
-              await tx.transaction.create({
-                data: {
-                  productId: existingProduct.id,
-                  quantity: stock,
-                  type: 'ADJUSTMENT',
-                  notes: 'CSV import update',
-                  userId,
-                  unitPrice: costPrice,
-                  subtotal: stock * costPrice,
-                  vatAmount: stock * costPrice * 0.15,
-                  totalAmount: stock * costPrice * 1.15,
-                },
-              });
+              // Create stock adjustment movement if stock changed
+              if (stockChanged) {
+                const stockDifference = stock - previousStock;
+                await tx.transaction.create({
+                  data: {
+                    productId: existingProduct.id,
+                    quantity: stock,
+                    type: 'ADJUSTMENT',
+                    notes: `CSV SYNCHRONIZATION - Stock adjusted from ${previousStock} to ${stock} (${stockDifference > 0 ? '+' : ''}${stockDifference})`,
+                    userId,
+                    unitPrice: costPrice || existingProduct.costPrice,
+                    subtotal: stock * (costPrice || existingProduct.costPrice),
+                    vatAmount: stock * (costPrice || existingProduct.costPrice) * 0.15,
+                    totalAmount: stock * (costPrice || existingProduct.costPrice) * 1.15,
+                  },
+                });
+                stockChanges++;
+              }
 
               updated++;
             } else {
@@ -440,6 +514,7 @@ export class CSVImportService {
             created,
             updated,
             failed: errors.length,
+            stockChanges,
             status: errors.length > 0 ? 'PARTIAL' : 'COMPLETED',
             errorMessage: errors.length > 0 ? JSON.stringify(errors) : null,
           },
@@ -450,7 +525,7 @@ export class CSVImportService {
           data: {
             entityType: 'IMPORT',
             entityId: importRecord.id,
-            action: 'PRODUCT_CSV_IMPORT',
+            action: 'CSV_SYNCHRONIZATION',
             userId,
             previousValue: '{}',
             newValue: JSON.stringify({
@@ -458,6 +533,7 @@ export class CSVImportService {
               created,
               updated,
               failed: errors.length,
+              stockChanges,
             }),
           },
         });
@@ -470,6 +546,7 @@ export class CSVImportService {
             updated,
             skipped,
             failed: errors.length,
+            stockChanges,
           },
           errors,
           importId: importRecord.id,
@@ -485,6 +562,7 @@ export class CSVImportService {
           updated: 0,
           skipped: 0,
           failed: 0,
+          stockChanges: 0,
         },
         errors: [{
           rowNumber: 0,

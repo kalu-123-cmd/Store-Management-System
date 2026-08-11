@@ -1167,6 +1167,7 @@ export const typeDefs = `#graphql
     updated: Int!
     skipped: Int!
     failed: Int!
+    stockChanges: Int!
   }
 
   type ImportError {
@@ -1185,6 +1186,7 @@ export const typeDefs = `#graphql
     created: Int!
     updated: Int!
     failed: Int!
+    stockChanges: Int!
     status: String!
     errorMessage: String
     createdAt: String!

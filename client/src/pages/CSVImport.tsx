@@ -60,9 +60,32 @@ const GET_IMPORT_HISTORY = gql`
       created
       updated
       failed
+      stockChanges
       status
       errorMessage
       createdAt
+    }
+  }
+`;
+
+const REFRESH_DASHBOARD = gql`
+  query RefreshDashboard {
+    dashboardStats {
+      totalProducts
+      totalCategories
+      totalSuppliers
+      totalCustomers
+      inventoryValue
+      todaySales
+      monthlyRevenue
+      monthlyProfit
+      lowStockCount
+      outOfStockCount
+      totalStock
+      expiringCount
+      pendingPurchases
+      outstandingReceivables
+      outstandingPayables
     }
   }
 `;
@@ -102,6 +125,7 @@ export function CSVImportPage() {
   const [previewImport] = useMutation(PREVIEW_IMPORT);
   const [importProducts] = useMutation(IMPORT_PRODUCTS);
   const { data: historyData, refetch: refetchHistory } = useQuery(GET_IMPORT_HISTORY);
+  const { refetch: refetchDashboard } = useQuery(REFRESH_DASHBOARD, { skip: true });
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -164,8 +188,11 @@ export function CSVImportPage() {
         toast({
           type: 'success',
           title: 'Import completed',
-          message: `Successfully imported ${result.data.importProducts.summary.created} products`,
+          message: `Successfully imported ${result.data.importProducts.summary.created} products, updated ${result.data.importProducts.summary.updated}, ${result.data.importProducts.summary.stockChanges} stock changes`,
         });
+        
+        // Automatically refresh dashboard data
+        await refetchDashboard();
       } else {
         toast({
           type: 'warning',
@@ -294,6 +321,7 @@ export function CSVImportPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Created</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Updated</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Failed</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Stock Changes</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
@@ -309,6 +337,7 @@ export function CSVImportPage() {
                       <td className="px-6 py-4 text-sm text-slate-900">{history.created}</td>
                       <td className="px-6 py-4 text-sm text-slate-900">{history.updated}</td>
                       <td className="px-6 py-4 text-sm text-slate-900">{history.failed}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900">{history.stockChanges}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                           history.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
@@ -367,7 +396,7 @@ export function CSVImportPage() {
         </div>
 
         {/* Import Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="text-sm text-blue-700 mb-1">Will Create</div>
             <div className="text-2xl font-bold text-blue-700">{preview.createCount}</div>
@@ -379,6 +408,10 @@ export function CSVImportPage() {
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
             <div className="text-sm text-slate-700 mb-1">Will Skip</div>
             <div className="text-2xl font-bold text-slate-700">{preview.skipCount}</div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div className="text-sm text-amber-700 mb-1">Stock Changes</div>
+            <div className="text-2xl font-bold text-amber-700">{preview.updateCount}</div>
           </div>
         </div>
 
@@ -485,7 +518,7 @@ export function CSVImportPage() {
 
         {/* Summary */}
         <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
             <div>
               <div className="text-sm text-slate-600 mb-1">Total Processed</div>
               <div className="text-3xl font-bold text-slate-900">{importResult.summary.totalProcessed}</div>
@@ -505,6 +538,10 @@ export function CSVImportPage() {
             <div>
               <div className="text-sm text-red-600 mb-1">Failed</div>
               <div className="text-3xl font-bold text-red-600">{importResult.summary.failed}</div>
+            </div>
+            <div>
+              <div className="text-sm text-amber-600 mb-1">Stock Changes</div>
+              <div className="text-3xl font-bold text-amber-600">{importResult.summary.stockChanges}</div>
             </div>
           </div>
         </div>
