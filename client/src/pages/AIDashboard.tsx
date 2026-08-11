@@ -66,7 +66,7 @@ interface LowStockProduct {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function AIDashboard() {
+export default function AIDashboard() {
   const { data, loading, error, refetch } = useQuery(GET_AI_INTELLIGENCE, {
     pollInterval: 30000, // Refresh every 30 seconds
   });

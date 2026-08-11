@@ -1,7 +1,7 @@
 {
-  "name": "StoreOS Enterprise",
+  "name": "StoreOS AI Powered Retail",
   "short_name": "StoreOS",
-  "description": "Autonomous AI-Powered Retail Operations Platform for Ethiopian businesses",
+  "description": "AI-Powered Retail Operations Platform",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -9,46 +9,10 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/favicon-16x16.png",
-      "sizes": "16x16",
-      "type": "image/png",
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
       "purpose": "any"
-    },
-    {
-      "src": "/favicon-32x32.png",
-      "sizes": "32x32",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/favicon-96x96.png",
-      "sizes": "96x96",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/favicon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/favicon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/apple-touch-icon.png",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "apple-touch-icon"
-    },
-    {
-      "src": "/apple-touch-icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "apple-touch-icon"
     }
   ],
   "categories": ["business", "productivity", "retail"],
@@ -59,21 +23,21 @@
       "short_name": "Dashboard",
       "description": "View retail dashboard",
       "url": "/dashboard",
-      "icons": [{ "src": "/favicon-96x96.png", "sizes": "96x96" }]
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
     },
     {
       "name": "POS",
       "short_name": "POS",
       "description": "Point of Sale",
       "url": "/sales",
-      "icons": [{ "src": "/favicon-96x96.png", "sizes": "96x96" }]
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
     },
     {
       "name": "Inventory",
       "short_name": "Inventory",
       "description": "Manage inventory",
       "url": "/inventory",
-      "icons": [{ "src": "/favicon-96x96.png", "sizes": "96x96" }]
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
     }
   ]
 }
