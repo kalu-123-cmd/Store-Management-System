@@ -535,3 +535,5 @@ export function CSVImportPage() {
 
   return null;
 }
+
+export default CSVImportPage;
