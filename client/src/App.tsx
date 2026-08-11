@@ -21,6 +21,7 @@ import Settings         from './pages/Settings';
 import NotFound         from './pages/NotFound';
 import Organizations    from './pages/Organizations';
 import Procurement      from './pages/Procurement';
+import CSVImport        from './pages/CSVImport';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token');
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="reports"         element={<Reports         />} />
         <Route path="users"           element={<Users           />} />
         <Route path="ai-dashboard"    element={<AIDashboard      />} />
+        <Route path="csv-import"     element={<CSVImport        />} />
         <Route path="profile"         element={<Profile         />} />
         <Route path="purchases"       element={<PurchaseOrders  />} />
         <Route path="barcodes"        element={<BarcodePrint    />} />

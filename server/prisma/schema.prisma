@@ -36,6 +36,7 @@ model User {
   notificationPreference NotificationPreference?
   procurementRequests    ProcurementRequest[]
   CreditAccount          CreditAccount[]
+  importHistory           ImportHistory[]
 }
 
 model Category {
@@ -43,6 +44,21 @@ model Category {
   name        String    @unique
   description String?
   products    Product[]
+}
+
+model ImportHistory {
+  id          String   @id @default(uuid())
+  fileName    String
+  importType  String   // 'PRODUCTS' or 'INVENTORY'
+  userId      String
+  totalRows   Int
+  created     Int
+  updated     Int
+  failed      Int
+  status      String   // 'COMPLETED', 'PARTIAL', 'FAILED'
+  errorMessage String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
 }
 
 model Supplier {

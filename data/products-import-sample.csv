@@ -1,0 +1,31 @@
+name,sku,category,stock,costPrice,sellingPrice,margin
+LED Bulb 9W,ELC-001,Electronics,50,180.00,200.00,10.0
+LED Bulb 15W,ELC-002,Electronics,35,280.00,300.00,7.1
+Extension Cord,ELC-003,Electronics,20,450.00,500.00,10.0
+Power Strip,ELC-004,Electronics,15,750.00,850.00,11.8
+Phone Charger,ELC-005,Electronics,30,650.00,750.00,13.3
+USB Charging Cable,ELC-006,Electronics,45,250.00,300.00,16.7
+Wireless Mouse,ELC-007,Electronics,18,900.00,1000.00,10.0
+Wired Keyboard,ELC-008,Electronics,12,1200.00,1300.00,7.7
+USB Flash Drive 32GB,ELC-009,Electronics,25,850.00,950.00,10.5
+Bluetooth Speaker,ELC-010,Electronics,10,2200.00,2500.00,12.0
+Earphones,ELC-011,Electronics,40,350.00,400.00,12.5
+Headphones,ELC-012,Electronics,15,1450.00,1600.00,9.4
+Electric Kettle,ELC-013,Electronics,8,1800.00,2000.00,10.0
+Rice Cooker,ELC-014,Electronics,7,3200.00,3500.00,8.6
+Electric Iron,ELC-015,Electronics,10,1750.00,2000.00,12.5
+Table Fan,ELC-016,Electronics,9,2500.00,2800.00,10.7
+Desk Lamp,ELC-017,Electronics,22,950.00,1050.00,9.5
+Calculator,ELC-018,Electronics,30,450.00,500.00,10.0
+Power Bank 10000mAh,ELC-019,Electronics,14,1800.00,2000.00,10.0
+Wall Clock,ELC-020,Electronics,16,850.00,950.00,10.5
+TV Remote Control,ELC-021,Electronics,18,320.00,400.00,20.0
+AA Batteries (Pack),ELC-022,Electronics,60,120.00,150.00,20.0
+AAA Batteries (Pack),ELC-023,Electronics,55,120.00,150.00,20.0
+Rechargeable Battery Charger,ELC-024,Electronics,8,950.00,1100.00,13.6
+LED Emergency Light,ELC-025,Electronics,12,1350.00,1500.00,10.0
+Portable Radio,ELC-026,Electronics,6,1200.00,1400.00,14.3
+Wi-Fi Router,ELC-027,Electronics,10,2500.00,2800.00,10.7
+HDMI Cable,ELC-028,Electronics,24,450.00,500.00,10.0
+Computer Monitor 24",ELC-029,Electronics,5,9500.00,10500.00,9.5
+Laptop Cooling Pad,ELC-030,Electronics,11,1400.00,1600.00,12.5

@@ -1,4 +1,7 @@
 export const typeDefs = `#graphql
+  scalar Date
+  scalar JSON
+
   type User {
     id: ID!
     name: String!
@@ -1122,6 +1125,63 @@ export const typeDefs = `#graphql
     notes: String
   }
 
+  # CSV Import types
+  type ImportValidation {
+    isValid: Boolean!
+    rowNumber: Int!
+    data: JSON
+    errors: [String!]!
+    warnings: [String!]!
+    action: String!
+  }
+
+  type ImportPreview {
+    totalRows: Int!
+    validRows: Int!
+    warningRows: Int!
+    errorRows: Int!
+    createCount: Int!
+    updateCount: Int!
+    skipCount: Int!
+    validations: [ImportValidation!]!
+  }
+
+  type ImportResult {
+    success: Boolean!
+    summary: ImportSummary!
+    errors: [ImportError!]!
+    importId: String
+  }
+
+  type ImportSummary {
+    totalProcessed: Int!
+    created: Int!
+    updated: Int!
+    skipped: Int!
+    failed: Int!
+  }
+
+  type ImportError {
+    rowNumber: Int!
+    sku: String!
+    error: String!
+  }
+
+  type ImportHistory {
+    id: ID!
+    fileName: String!
+    importType: String!
+    userId: String!
+    userName: String!
+    totalRows: Int!
+    created: Int!
+    updated: Int!
+    failed: Int!
+    status: String!
+    errorMessage: String
+    createdAt: String!
+  }
+
   type Query {
     me: User
     users: [User!]!
@@ -1421,6 +1481,11 @@ export const typeDefs = `#graphql
     cancelProcurementRequest(id: ID!): Boolean!
 
     receiveGoods(purchaseOrderId: String!, items: [ReceiveGoodsItemInput!], notes: String, warehouseId: String): GoodsReceipt!
+
+    # CSV Import mutations
+    previewProductImport(csvContent: String!): ImportPreview!
+    importProducts(csvContent: String!): ImportResult!
+    getImportHistory: [ImportHistory]!
 
     createTender(procurementRefId: String, projectName: String!, procurementCategory: String!, procurementMethod: String!, marketType: String!, submissionDeadline: String!, bidValidityPeriod: Int!, bidSecurity: Float, currency: String, contractType: String!, description: String): Tender!
     updateTender(id: ID!, submissionDeadline: String, bidSecurity: Float, description: String, status: String): Tender!

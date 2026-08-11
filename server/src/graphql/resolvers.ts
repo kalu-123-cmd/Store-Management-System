@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { sendSaleReceipt, sendLowStockAlert } from '../email';
 import { createSaleTransaction, processSaleReturn } from '../services/posTransactionService';
 import { createProcurementService } from '../services/procurementService';
+import { CSVImportService } from '../services/csvImportService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_jwt_key_12345';
 
@@ -2546,6 +2547,38 @@ export const resolvers = {
       }
 
       return result.goodsReceipt;
+    },
+
+    // CSV Import mutations
+    previewProductImport: async (_: any, { csvContent }: any, { prisma, user }: any) => {
+      requirePermission(user, 'product:create', ['ADMIN', 'MANAGER']);
+      
+      const csvService = new CSVImportService(prisma);
+      const preview = await csvService.previewProductImport(csvContent, user.id);
+      
+      return preview;
+    },
+
+    importProducts: async (_: any, { csvContent }: any, { prisma, user }: any) => {
+      requirePermission(user, 'product:create', ['ADMIN', 'MANAGER']);
+      
+      const csvService = new CSVImportService(prisma);
+      const result = await csvService.importProducts(csvContent, user.id);
+      
+      if (!result.success) {
+        throw new Error(result.errors[0]?.error || 'Import failed');
+      }
+      
+      return result;
+    },
+
+    getImportHistory: async (_: any, __: any, { prisma, user }: any) => {
+      requirePermission(user, 'product:view', ['ADMIN', 'MANAGER']);
+      
+      const csvService = new CSVImportService(prisma);
+      const history = await csvService.getImportHistory();
+      
+      return history;
     },
     rejectProcurementRequest: async (_: any, { id, comments }: any, { prisma, user }: any) => {
       requirePermission(user, 'procurement.approve');
