@@ -1,26 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
   <defs>
-    <linearGradient id="faviconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#2563eb" />
-      <stop offset="50%" stopColor="#4f46e5" />
-      <stop offset="100%" stopColor="#8b5cf6" />
+    <linearGradient id="faviconPrimaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#0f172a" />
+      <stop offset="50%" stopColor="#1e40af" />
+      <stop offset="100%" stopColor="#2563eb" />
     </linearGradient>
-    <linearGradient id="faviconTopGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#60a5fa" />
-      <stop offset="100%" stopColor="#4f46e5" />
+    <linearGradient id="faviconBar1Gradient" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stopColor="#10b981" />
+      <stop offset="100%" stopColor="#34d399" />
+    </linearGradient>
+    <linearGradient id="faviconBar2Gradient" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stopColor="#2563eb" />
+      <stop offset="100%" stopColor="#3b82f6" />
+    </linearGradient>
+    <linearGradient id="faviconBar3Gradient" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stopColor="#f59e0b" />
+      <stop offset="100%" stopColor="#fbbf24" />
     </linearGradient>
   </defs>
   
   <path
-    d="M6 4 L12 8 L26 8 L32 12 L32 24 L26 28 L12 28 L6 24 Z"
-    fill="url(#faviconGradient)"
+    d="M4 6 L8 8 L24 8 L28 10 L28 24 L24 26 L8 26 L4 24 Z"
+    fill="url(#faviconPrimaryGradient)"
   />
   
   <path
-    d="M6 4 L6 16 L12 8 L26 8 L32 12 L32 12 L26 8 L12 8 L6 4"
-    fill="url(#faviconTopGradient)"
-    opacity="0.9"
+    d="M10 6 L10 4 Q10 2 12 2 L20 2 Q22 2 22 4 L22 6"
+    fill="none"
+    stroke="url(#faviconPrimaryGradient)"
+    stroke-width="2"
+    stroke-linecap="round"
   />
   
-  <rect x="12" y="12" width="8" height="8" rx="1" fill="white" opacity="0.2" />
+  <rect x="10" y="16" width="4" height="6" rx="0.5" fill="url(#faviconBar1Gradient)" />
+  <rect x="14" y="14" width="4" height="8" rx="0.5" fill="url(#faviconBar2Gradient)" />
+  <rect x="18" y="12" width="4" height="10" rx="0.5" fill="url(#faviconBar3Gradient)" />
+  
+  <circle cx="10" cy="28" r="2" fill="#0f172a" />
+  <circle cx="22" cy="28" r="2" fill="#0f172a" />
 </svg>

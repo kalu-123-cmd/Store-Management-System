@@ -1,24 +1,27 @@
 import React from 'react';
-import { StoreOSLogo } from './Logo';
+import { Logo } from './Logo';
 
 /**
- * AI Powered Retail Brand Component
+ * StoreOS Brand Component
  * 
- * Displays the StoreOS branding with AI-powered retail management tagline
+ * Displays the StoreOS branding with Smart Retail Management tagline
  * Professional enterprise-grade branding for international markets
  */
-export function AIPoweredRetailBrand() {
+export function StoreOSBrand() {
   return (
     <div className="flex items-center space-x-3">
-      <StoreOSLogo size="md" />
+      <Logo size="md" />
       <div className="flex flex-col">
         <h1 className="text-2xl font-bold text-slate-900">
-          StoreOS
+          Store<span className="text-blue-600">OS</span>
         </h1>
         <p className="text-xs uppercase tracking-widest text-slate-600">
-          AI Powered Retail
+          Smart Retail Management
         </p>
       </div>
     </div>
   );
 }
+
+// Maintain backward compatibility
+export { StoreOSBrand as AIPoweredRetailBrand };

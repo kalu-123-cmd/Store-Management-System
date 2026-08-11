@@ -211,7 +211,7 @@ export default function Layout() {
               <Menu size={20} />
             </button>
             <Logo variant="icon-only" size="sm" className="hidden md:block" />
-            <h1 className="text-base font-semibold text-foreground">StoreOS - AI Powered Retail</h1>
+            <h1 className="text-base font-semibold text-foreground">StoreOS - Smart Retail Management</h1>
           </div>
 
           {/* Header right: branch selector + stock alerts + language switcher + dark mode */}
