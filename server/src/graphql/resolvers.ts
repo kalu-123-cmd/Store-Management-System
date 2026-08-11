@@ -1,6 +1,8 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { sendSaleReceipt, sendLowStockAlert } from '../email';
+import { createSaleTransaction, processSaleReturn } from '../services/posTransactionService';
+import { createProcurementService } from '../services/procurementService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_jwt_key_12345';
 
@@ -13,13 +15,13 @@ function requireRole(user: any, ...roles: string[]) {
   if (!roles.includes(user.role)) throw new Error('Not authorized');
 }
 
-function requirePermission(user: any, permission: string) {
+// Simplified permission check with role fallback
+function requirePermission(user: any, permission: string, fallbackRoles?: string[]) {
   requireAuth(user);
-  // TODO: Implement proper permission checking once we have the permission system
-  // For now, just check if user is ADMIN or has the required role
-  if (user.role !== 'ADMIN') {
-    throw new Error('Not authorized');
-  }
+  // For now, use role-based fallback if provided
+  if (fallbackRoles && fallbackRoles.includes(user.role)) return;
+  if (user.role === 'ADMIN') return;
+  throw new Error(`Not authorized: requires permission '${permission}' or role ${fallbackRoles?.join('/')}`);
 }
 
 // ── Helper: map TraditionalItem DB record to GraphQL type ──────────────────
@@ -56,7 +58,7 @@ export const resolvers = {
       };
     },
     users: async (_: any, __: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
+      requirePermission(user, 'user:view', ['ADMIN']);
       return prisma.user.findMany();
     },
 
@@ -1487,7 +1489,7 @@ export const resolvers = {
     },
 
     createProduct: async (_: any, args: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, 'product:create', ['ADMIN', 'MANAGER']);
 
       // Check for duplicate SKU before attempting insert
       const existing = await prisma.product.findUnique({ where: { sku: args.sku } });
@@ -1523,7 +1525,7 @@ export const resolvers = {
     },
 
     updateProduct: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, 'product:update', ['ADMIN', 'MANAGER']);
 
       // Check SKU uniqueness if SKU is being changed
       if (args.sku) {
@@ -1557,7 +1559,7 @@ export const resolvers = {
     },
 
     deleteProduct: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, 'product:delete', ['ADMIN', 'MANAGER']);
       const p = await prisma.product.findUnique({
         where: { id },
         include: { saleItems: true, transactions: true },
@@ -1581,7 +1583,7 @@ export const resolvers = {
     },
 
     adjustStock: async (_: any, { productId, quantity, type, notes }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, 'inventory:adjust', ['ADMIN', 'MANAGER', 'WAREHOUSE_MANAGER']);
       const product = await prisma.product.findUnique({ where: { id: productId } });
       if (!product) throw new Error('Product not found');
 
@@ -1608,97 +1610,75 @@ export const resolvers = {
       return { ...txn, createdAt: txn.createdAt.toISOString() };
     },
 
-    createSale: async (_: any, { customerId, items }: any, { prisma, user }: any) => {
-      requireAuth(user);
+    createSale: async (_: any, { customerId, items, paymentMethod, paymentAmount, branchId, notes }: any, { prisma, user }: any) => {
+      requirePermission(user, 'sale:create', ['ADMIN', 'MANAGER', 'CASHIER', 'SALES_STAFF']);
 
-      for (const item of items) {
-        const product = await prisma.product.findUnique({ where: { id: item.productId } });
-        if (!product) throw new Error(`Product ${item.productId} not found`);
-        if (product.stock < item.quantity) throw new Error(`Insufficient stock for ${product.name}`);
-      }
-
-      // Generate sequential invoice number INV-0001, INV-0002 …
-      const lastSale = await prisma.sale.findFirst({ orderBy: { createdAt: 'desc' } });
-      let nextNum = 1;
-      if (lastSale?.invoiceNo) {
-        const match = lastSale.invoiceNo.match(/INV-(\d+)$/);
-        if (match) nextNum = parseInt(match[1], 10) + 1;
-      }
-      const invoiceNo = `INV-${String(nextNum).padStart(4, '0')}`;
-      const totalAmount = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
-
-      const sale = await prisma.sale.create({
-        data: {
-          invoiceNo,
-          totalAmount,
-          customerId: customerId || null,
-          userId: user.id,
-          items: { create: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity, price: i.price })) },
-        },
-        include: { items: { include: { product: true } }, customer: true, user: true, returns: true },
+      // Use the new POS transaction service
+      const result = await createSaleTransaction(prisma, {
+        customerId,
+        items: items.map((i: any) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          price: i.price,
+        })),
+        paymentMethod: paymentMethod || 'CASH',
+        paymentAmount: paymentAmount || items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0),
+        cashierId: user.id,
+        branchId,
+        notes,
+        sessionId: undefined, // Would come from frontend
+        requestId: undefined, // Would come from frontend
       });
 
-      for (const item of items) {
-        await prisma.product.update({ where: { id: item.productId }, data: { stock: { decrement: item.quantity } } });
-        await prisma.transaction.create({ data: { productId: item.productId, quantity: item.quantity, type: 'OUT', notes: `Sale ${invoiceNo}`, userId: user.id } });
+      if (!result.success) {
+        throw new Error(result.error || 'Sale transaction failed');
       }
 
-      await prisma.activityLog.create({ data: { userId: user.id, action: 'SALE_COMPLETED', details: `Sale ${invoiceNo} for $${totalAmount}` } });
-
-      // Send receipt email if customer has email address
-      sendSaleReceipt({ ...sale, createdAt: sale.createdAt.toISOString() }).catch(() => {});
-
-      return { ...sale, createdAt: sale.createdAt.toISOString() };
+      return {
+        id: result.saleId,
+        invoiceNo: result.invoiceNo,
+        totalAmount: result.totalAmount,
+        subtotal: result.subtotal,
+        vatAmount: result.vatAmount,
+        customerId,
+        customer: customerId ? await prisma.customer.findUnique({ where: { id: customerId } }) : null,
+        userId: user.id,
+        user,
+        items: result.items,
+        createdAt: new Date().toISOString(),
+        paymentMethod,
+        paymentStatus: result.paymentStatus,
+        cogsAmount: result.cogsAmount,
+        profitAmount: result.profitAmount,
+      };
     },
 
-    returnSale: async (_: any, { saleId, reason }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+    returnSale: async (_: any, { saleId, reason, items }: any, { prisma, user }: any) => {
+      requirePermission(user, 'sale:refund', ['ADMIN', 'MANAGER']);
+
+      // Use the new return processing service
+      const result = await processSaleReturn(
+        prisma,
+        saleId,
+        items || [], // If items not provided, return full sale
+        reason,
+        user.id
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Return processing failed');
+      }
 
       const sale = await prisma.sale.findUnique({
         where: { id: saleId },
         include: { items: { include: { product: true } }, returns: true },
       });
-      if (!sale) throw new Error('Sale not found');
 
-      const alreadyReturned = sale.returns.length > 0;
-      if (alreadyReturned) throw new Error('This sale has already been returned');
-
-      // Restore stock for each item
-      for (const item of sale.items) {
-        await prisma.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
-        await prisma.transaction.create({
-          data: {
-            productId: item.productId,
-            quantity: item.quantity,
-            type: 'IN',
-            notes: `Return of ${sale.invoiceNo}`,
-            userId: user.id,
-          },
-        });
-      }
-
-      const saleReturn = await prisma.saleReturn.create({
-        data: {
-          saleId: sale.id,
-          refundAmount: sale.totalAmount,
-          reason: reason || null,
-          userId: user.id,
-        },
-        include: { sale: true, user: true },
-      });
-
-      await prisma.activityLog.create({
-        data: {
-          userId: user.id,
-          action: 'SALE_RETURNED',
-          details: `Returned ${sale.invoiceNo} — refund $${sale.totalAmount}`,
-        },
-      });
-
-      return { ...saleReturn, createdAt: saleReturn.createdAt.toISOString() };
+      return {
+        ...sale,
+        createdAt: sale.createdAt.toISOString(),
+        refundAmount: result.refundAmount,
+      };
     },
 
     updateProfile: async (_: any, { name, currentPassword, newPassword }: any, { prisma, user }: any) => {
@@ -1719,7 +1699,7 @@ export const resolvers = {
     },
 
     createUser: async (_: any, { name, email, password, role }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
+      requirePermission(user, 'user:create', ['ADMIN']);
       const hashedPassword = await bcrypt.hash(password, 10);
       const newUser = await prisma.user.create({
         data: { name, email, password: hashedPassword, role },
@@ -1729,7 +1709,7 @@ export const resolvers = {
     },
 
     updateUserRole: async (_: any, { id, role }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
+      requirePermission(user, 'user:manage_roles', ['ADMIN']);
       if (id === user.id) throw new Error('You cannot change your own role');
       const updated = await prisma.user.update({ where: { id }, data: { role } });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_ROLE_CHANGED', details: `Changed role of user ${updated.name} to ${role}` } });
@@ -2392,24 +2372,28 @@ export const resolvers = {
     // Procurement mutations (Phase 4 & 5)
 
     createProcurementRequest: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.create');
-      const requestNumber = `PR-${Date.now()}`;
-      return prisma.procurementRequest.create({
-        data: {
-          requestNumber,
-          departmentId: args.departmentId || null,
-          requesterId: user.id,
-          requiredDate: new Date(args.requiredDate),
-          priority: args.priority || 'NORMAL',
-          justification: args.justification || null,
-          notes: args.notes || null,
-          estimatedTotal: 0,
-        },
-        include: { organization: true, department: true, requester: true },
+      requirePermission(user, 'procurement:create', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
+
+      const procurementService = createProcurementService(prisma);
+      const result = await procurementService.createProcurementRequest({
+        departmentId: args.departmentId,
+        userId: user.id,
+        organizationId: args.organizationId,
+        items: args.items || [],
+        justification: args.justification,
+        urgency: args.urgency || 'MEDIUM',
+        requiredBy: args.requiredBy ? new Date(args.requiredBy) : undefined,
       });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to create procurement request');
+      }
+
+      return result.request;
     },
+
     updateProcurementRequest: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.update');
+      requirePermission(user, 'procurement:create', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
       const data: any = { ...args };
       if (args.requiredDate) data.requiredDate = new Date(args.requiredDate);
       return prisma.procurementRequest.update({
@@ -2498,20 +2482,51 @@ export const resolvers = {
       return true;
     },
     submitProcurementRequest: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.create');
-      return prisma.procurementRequest.update({
-        where: { id },
-        data: { status: 'SUBMITTED' },
-        include: { organization: true, department: true, requester: true, items: true },
-      });
+      requirePermission(user, 'procurement:approve', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
+
+      const procurementService = createProcurementService(prisma);
+      const result = await procurementService.submitProcurementRequest(id, user.id);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to submit procurement request');
+      }
+
+      return result.request;
     },
     approveProcurementRequest: async (_: any, { id, comments }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.approve');
-      return prisma.procurementRequest.update({
-        where: { id },
-        data: { status: 'APPROVED' },
-        include: { organization: true, department: true, requester: true, items: true },
+      requirePermission(user, 'procurement:approve', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
+
+      const procurementService = createProcurementService(prisma);
+      const result = await procurementService.approveProcurementRequest(id, user.id, comments);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to approve procurement request');
+      }
+
+      return result.request;
+    },
+
+    receiveGoods: async (_: any, { purchaseOrderId, items, notes, warehouseId }: any, { prisma, user }: any) => {
+      requirePermission(user, 'procurement:receive', ['ADMIN', 'MANAGER', 'WAREHOUSE_MANAGER']);
+
+      const procurementService = createProcurementService(prisma);
+      const result = await procurementService.receiveGoods({
+        purchaseOrderId,
+        userId: user.id,
+        items: items.map((item: any) => ({
+          ...item,
+          manufacturingDate: item.manufacturingDate ? new Date(item.manufacturingDate) : undefined,
+          expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+        })),
+        notes,
+        warehouseId,
       });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to receive goods');
+      }
+
+      return result.goodsReceipt;
     },
     rejectProcurementRequest: async (_: any, { id, comments }: any, { prisma, user }: any) => {
       requirePermission(user, 'procurement.approve');

@@ -107,12 +107,20 @@ export const typeDefs = `#graphql
     id: ID!
     invoiceNo: String!
     totalAmount: Float!
+    subtotal: Float
+    vatAmount: Float
     customerId: String
     customer: Customer
     userId: String!
     user: User
     items: [SaleItem!]!
     returns: [SaleReturn!]!
+    paymentMethod: String
+    paymentStatus: String
+    branchId: String
+    notes: String
+    cogsAmount: Float
+    profitAmount: Float
     createdAt: String!
   }
 
@@ -1094,6 +1102,29 @@ export const typeDefs = `#graphql
     price: Float!
   }
 
+  input ReturnItemInput {
+    saleItemId: String!
+    quantity: Int!
+  }
+
+  input ProcurementRequestItemInput {
+    productId: String!
+    quantity: Int!
+    estimatedUnitCost: Float!
+    notes: String
+  }
+
+  input ReceiveGoodsItemInput {
+    purchaseOrderItemId: String!
+    quantityReceived: Int!
+    batchNumber: String
+    manufacturingDate: String
+    expiryDate: String
+    actualUnitCost: Float
+    condition: String
+    notes: String
+  }
+
   type Query {
     me: User
     users: [User!]!
@@ -1296,9 +1327,13 @@ export const typeDefs = `#graphql
     createSale(
       customerId: String
       items: [CreateSaleItemInput!]!
+      paymentMethod: String
+      paymentAmount: Float
+      branchId: String
+      notes: String
     ): Sale!
 
-    returnSale(saleId: ID!, reason: String): SaleReturn!
+    returnSale(saleId: ID!, reason: String, items: [ReturnItemInput!]): SaleReturn!
 
     createUser(name: String!, email: String!, password: String!, role: String!): User!
     updateUserRole(id: ID!, role: String!): User!
@@ -1378,7 +1413,7 @@ export const typeDefs = `#graphql
     cancelInventoryAudit(id: ID!): Boolean!
 
     # Procurement mutations (Phase 4 & 5)
-    createProcurementRequest(departmentId: String, requiredDate: String!, priority: String, justification: String, notes: String): ProcurementRequest!
+    createProcurementRequest(departmentId: String, organizationId: String, items: [ProcurementRequestItemInput!], justification: String, urgency: String, requiredBy: String): ProcurementRequest!
     updateProcurementRequest(id: ID!, requiredDate: String, priority: String, justification: String, notes: String): ProcurementRequest!
     addProcurementRequestItem(procurementRequestId: String!, description: String!, quantity: Int!, unitOfMeasure: String!, estimatedUnitCost: Float!, technicalSpecs: String, category: String, notes: String): ProcurementRequestItem!
     updateProcurementRequestItem(id: ID!, quantity: Int, estimatedUnitCost: Float, technicalSpecs: String, notes: String): ProcurementRequestItem!
@@ -1387,6 +1422,8 @@ export const typeDefs = `#graphql
     approveProcurementRequest(id: ID!, comments: String): ProcurementRequest!
     rejectProcurementRequest(id: ID!, comments: String): ProcurementRequest!
     cancelProcurementRequest(id: ID!): Boolean!
+
+    receiveGoods(purchaseOrderId: String!, items: [ReceiveGoodsItemInput!], notes: String, warehouseId: String): GoodsReceipt!
 
     createTender(procurementRefId: String, projectName: String!, procurementCategory: String!, procurementMethod: String!, marketType: String!, submissionDeadline: String!, bidValidityPeriod: Int!, bidSecurity: Float, currency: String, contractType: String!, description: String): Tender!
     updateTender(id: ID!, submissionDeadline: String, bidSecurity: Float, description: String, status: String): Tender!
