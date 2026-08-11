@@ -200,51 +200,48 @@ export const resolvers = {
       requireAuth(user);
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      const [products, categories, suppliers, customers, todaySalesAgg, monthlySales] = await Promise.all([
+      const [products, todaySalesAgg, lowStockProducts, expiringBatches, pendingPurchaseOrders, receivables, payables] = await Promise.all([
         prisma.product.findMany(),
-        prisma.category.count(),
-        prisma.supplier.count(),
-        prisma.customer.count(),
         prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfDay } } }),
-        prisma.sale.findMany({ where: { createdAt: { gte: startOfMonth } }, include: { items: { include: { product: true } } } }),
+        prisma.product.findMany({ where: { stock: { lte: prisma.product.fields.minStockLevel } } }),
+        prisma.itemBatch.findMany({ where: { expiryDate: { lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) } } }),
+        prisma.purchaseOrder.findMany({ where: { status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SENT'] } } }),
+        prisma.creditAccount.findMany({ where: { balance: { gt: 0 } } }),
+        prisma.creditAccount.findMany({ where: { balance: { lt: 0 } } }),
       ]);
 
-      const inventoryValue = products.reduce((sum: number, p: any) => sum + p.costPrice * p.stock, 0);
-      const monthlyRevenue = monthlySales.reduce((sum: number, s: any) => sum + s.totalAmount, 0);
-      const monthlyProfit = monthlySales.reduce((sum: number, s: any) => {
-        return sum + s.items.reduce((isum: number, item: any) => isum + (item.price - item.product.costPrice) * item.quantity, 0);
-      }, 0);
-      const lowStockCount = products.filter((p: any) => p.stock > 0 && p.stock <= p.minStockLevel).length;
-      const outOfStockCount = products.filter((p: any) => p.stock === 0).length;
+      const totalStock = products.reduce((sum: number, p: any) => sum + p.stock, 0);
+      const lowStockCount = lowStockProducts.length;
+      const expiringCount = expiringBatches.length;
+      const pendingPurchases = pendingPurchaseOrders.length;
+      const outstandingReceivables = receivables.reduce((sum: number, r: any) => sum + r.balance, 0);
+      const outstandingPayables = Math.abs(payables.reduce((sum: number, p: any) => sum + p.balance, 0));
 
       return {
-        totalProducts: products.length,
-        totalCategories: categories,
-        totalSuppliers: suppliers,
-        totalCustomers: customers,
-        inventoryValue,
         todaySales: todaySalesAgg._sum.totalAmount || 0,
-        monthlyRevenue,
-        monthlyProfit,
+        totalStock,
         lowStockCount,
-        outOfStockCount,
+        expiringCount,
+        pendingPurchases,
+        outstandingReceivables,
+        outstandingPayables,
       };
     },
 
     lowStockProducts: async (_: any, __: any, { prisma, user }: any) => {
       requireAuth(user);
-      const all = await prisma.product.findMany({
-        include: { category: true, supplier: true, saleItems: true },
+      const products = await prisma.product.findMany({
+        include: { category: true },
       });
-      return all
+      return products
         .filter((p: any) => p.stock <= p.minStockLevel)
         .map((p: any) => ({
-          ...p,
-          createdAt: p.createdAt.toISOString(),
-          updatedAt: p.updatedAt.toISOString(),
-          profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100,
+          id: p.id,
+          name: p.name,
+          stock: p.stock,
+          minStockLevel: p.minStockLevel,
+          categoryName: p.category?.name || 'Uncategorized',
         }));
     },
 
@@ -294,15 +291,15 @@ export const resolvers = {
         include: { product: { include: { category: true } } },
       });
 
-      const byCategory: Record<string, { name: string; revenue: number; count: number }> = {};
+      const byCategory: Record<string, { category: string; totalSales: number; totalRevenue: number }> = {};
       for (const item of saleItems) {
         const catName = item.product?.category?.name ?? 'Uncategorized';
-        if (!byCategory[catName]) byCategory[catName] = { name: catName, revenue: 0, count: 0 };
-        byCategory[catName].revenue += item.price * item.quantity;
-        byCategory[catName].count += item.quantity;
+        if (!byCategory[catName]) byCategory[catName] = { category: catName, totalSales: 0, totalRevenue: 0 };
+        byCategory[catName].totalRevenue += item.price * item.quantity;
+        byCategory[catName].totalSales += item.quantity;
       }
 
-      return Object.values(byCategory).sort((a, b) => b.revenue - a.revenue);
+      return Object.values(byCategory).sort((a, b) => b.totalRevenue - a.totalRevenue);
     },
 
     // ── Branch queries ──────────────────────────────────────────────────────

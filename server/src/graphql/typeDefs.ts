@@ -140,16 +140,13 @@ export const typeDefs = `#graphql
   }
 
   type DashboardStats {
-    totalProducts: Int!
-    totalCategories: Int!
-    totalSuppliers: Int!
-    totalCustomers: Int!
-    inventoryValue: Float!
     todaySales: Float!
-    monthlyRevenue: Float!
-    monthlyProfit: Float!
+    totalStock: Int!
     lowStockCount: Int!
-    outOfStockCount: Int!
+    expiringCount: Int!
+    pendingPurchases: Int!
+    outstandingReceivables: Float!
+    outstandingPayables: Float!
   }
 
   type PurchaseOrder {
@@ -1065,9 +1062,9 @@ export const typeDefs = `#graphql
   }
 
   type CategoryRevenue {
-    name: String!
-    revenue: Float!
-    count: Int!
+    category: String!
+    totalSales: Int!
+    totalRevenue: Float!
   }
 
   type TraditionalItem {
