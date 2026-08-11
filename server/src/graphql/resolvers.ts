@@ -202,27 +202,46 @@ export const resolvers = {
         requireAuth(user);
         const now = new Date();
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        const [products, todaySalesAgg, expiringBatches, pendingPurchaseOrders, receivables, payables] = await Promise.all([
+        const [products, categories, suppliers, customers, todaySalesAgg, monthlySales, expiringBatches, pendingPurchaseOrders, receivables, payables] = await Promise.all([
           prisma.product.findMany(),
+          prisma.category.count(),
+          prisma.supplier.count(),
+          prisma.customer.count(),
           prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfDay } } }),
+          prisma.sale.findMany({ where: { createdAt: { gte: startOfMonth } }, include: { items: { include: { product: true } } } }),
           prisma.itemBatch.findMany({ where: { expiryDate: { lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) } } }),
           prisma.purchaseOrder.findMany({ where: { status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SENT'] } } }),
           prisma.creditAccount.findMany({ where: { balance: { gt: 0 } } }),
           prisma.creditAccount.findMany({ where: { balance: { lt: 0 } } }),
         ]);
 
+        const inventoryValue = products.reduce((sum: number, p: any) => sum + p.costPrice * p.stock, 0);
+        const monthlyRevenue = monthlySales.reduce((sum: number, s: any) => sum + s.totalAmount, 0);
+        const monthlyProfit = monthlySales.reduce((sum: number, s: any) => {
+          return sum + s.items.reduce((isum: number, item: any) => isum + (item.price - item.product.costPrice) * item.quantity, 0);
+        }, 0);
         const totalStock = products.reduce((sum: number, p: any) => sum + p.stock, 0);
-        const lowStockCount = products.filter((p: any) => p.stock <= p.minStockLevel).length;
+        const lowStockCount = products.filter((p: any) => p.stock > 0 && p.stock <= p.minStockLevel).length;
+        const outOfStockCount = products.filter((p: any) => p.stock === 0).length;
         const expiringCount = expiringBatches.length;
         const pendingPurchases = pendingPurchaseOrders.length;
         const outstandingReceivables = receivables.reduce((sum: number, r: any) => sum + r.balance, 0);
         const outstandingPayables = Math.abs(payables.reduce((sum: number, p: any) => sum + p.balance, 0));
 
         return {
+          totalProducts: products.length,
+          totalCategories: categories,
+          totalSuppliers: suppliers,
+          totalCustomers: customers,
+          inventoryValue,
           todaySales: todaySalesAgg._sum.totalAmount || 0,
-          totalStock,
+          monthlyRevenue,
+          monthlyProfit,
           lowStockCount,
+          outOfStockCount,
+          totalStock,
           expiringCount,
           pendingPurchases,
           outstandingReceivables,
@@ -231,9 +250,17 @@ export const resolvers = {
       } catch (error) {
         console.error('Dashboard stats error:', error);
         return {
+          totalProducts: 0,
+          totalCategories: 0,
+          totalSuppliers: 0,
+          totalCustomers: 0,
+          inventoryValue: 0,
           todaySales: 0,
-          totalStock: 0,
+          monthlyRevenue: 0,
+          monthlyProfit: 0,
           lowStockCount: 0,
+          outOfStockCount: 0,
+          totalStock: 0,
           expiringCount: 0,
           pendingPurchases: 0,
           outstandingReceivables: 0,

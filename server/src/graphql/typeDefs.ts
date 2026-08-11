@@ -143,9 +143,17 @@ export const typeDefs = `#graphql
   }
 
   type DashboardStats {
+    totalProducts: Int!
+    totalCategories: Int!
+    totalSuppliers: Int!
+    totalCustomers: Int!
+    inventoryValue: Float!
     todaySales: Float!
-    totalStock: Int!
+    monthlyRevenue: Float!
+    monthlyProfit: Float!
     lowStockCount: Int!
+    outOfStockCount: Int!
+    totalStock: Int!
     expiringCount: Int!
     pendingPurchases: Int!
     outstandingReceivables: Float!
