@@ -363,7 +363,7 @@ export async function createSaleTransaction(
         profitAmount: profitCalc.grossProfit.toString(),
         items: saleItems,
         paymentStatus: isPartialPayment ? 'PARTIAL' : 'PAID',
-        creditAmount: creditAmount.toString(),
+        creditAmount: creditAmount.isZero() ? 0 : creditAmount.toNumber(),
       };
     });
   } catch (error) {

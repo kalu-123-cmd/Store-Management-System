@@ -1732,7 +1732,7 @@ export const resolvers = {
         createdAt: new Date().toISOString(),
         paymentMethod,
         paymentStatus: result.paymentStatus,
-        creditAmount: result.creditAmount,
+        creditAmount: result.creditAmount || 0,
         cogsAmount: result.cogsAmount,
         profitAmount: result.profitAmount,
       };
