@@ -352,6 +352,15 @@ export const resolvers = {
       }
     },
 
+    getImportHistory: async (_: any, __: any, { prisma, user }: any) => {
+      requirePermission(user, 'product:view', ['ADMIN', 'MANAGER']);
+
+      const csvService = new CSVImportService(prisma);
+      const history = await csvService.getImportHistory();
+
+      return history;
+    },
+
     // ── Branch queries ──────────────────────────────────────────────────────
 
     branches: async (_: any, __: any, { prisma, user }: any) => {
@@ -2599,14 +2608,6 @@ export const resolvers = {
       return result;
     },
 
-    getImportHistory: async (_: any, __: any, { prisma, user }: any) => {
-      requirePermission(user, 'product:view', ['ADMIN', 'MANAGER']);
-      
-      const csvService = new CSVImportService(prisma);
-      const history = await csvService.getImportHistory();
-      
-      return history;
-    },
     rejectProcurementRequest: async (_: any, { id, comments }: any, { prisma, user }: any) => {
       requirePermission(user, 'procurement.approve');
       return prisma.procurementRequest.update({

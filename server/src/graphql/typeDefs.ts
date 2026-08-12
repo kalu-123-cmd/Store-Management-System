@@ -1221,6 +1221,8 @@ export const typeDefs = `#graphql
     monthlySalesByDay(year: Int, month: Int, startDate: String, endDate: String): [DailySales!]!
     salesByCategory: [CategoryRevenue!]!
 
+    getImportHistory: [ImportHistory]!
+
     traditionalItems(search: String, category: String, region: String): [TraditionalItem!]!
     traditionalItem(id: ID!): TraditionalItem
 
@@ -1495,7 +1497,6 @@ export const typeDefs = `#graphql
     # CSV Import mutations
     previewProductImport(csvContent: String!): ImportPreview!
     importProducts(csvContent: String!): ImportResult!
-    getImportHistory: [ImportHistory]!
 
     createTender(procurementRefId: String, projectName: String!, procurementCategory: String!, procurementMethod: String!, marketType: String!, submissionDeadline: String!, bidValidityPeriod: Int!, bidSecurity: Float, currency: String, contractType: String!, description: String): Tender!
     updateTender(id: ID!, submissionDeadline: String, bidSecurity: Float, description: String, status: String): Tender!
