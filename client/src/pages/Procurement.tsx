@@ -491,18 +491,23 @@ function RequestsTab({ requests, loading, refetch }: any) {
               <p className="text-sm font-semibold text-foreground">{fmt(req.estimatedTotal)}</p>
               <p className="text-xs text-muted-foreground">{req.items.length} items · Due {req.requiredDate ? new Date(req.requiredDate).toLocaleDateString() : '—'}</p>
             </div>
-            <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
               {req.status === 'DRAFT' && (
                 <button onClick={() => handleSubmit(req.id, req.requestNumber)}
-                  className="p-1.5 text-muted-foreground hover:text-sky-500 hover:bg-sky-500/10 rounded-lg transition-colors" title="Submit for review">
-                  <Send size={14} />
+                  className="px-3 py-1.5 bg-sky-500 text-white rounded-lg text-xs font-medium hover:bg-sky-600 transition-colors flex items-center gap-1.5" title="Submit for review">
+                  <Send size={12} /> Submit
                 </button>
               )}
               {req.status === 'SUBMITTED' && (
                 <button onClick={() => handleApprove(req.id, req.requestNumber)}
-                  className="p-1.5 text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 rounded-lg transition-colors" title="Approve">
-                  <CheckCircle2 size={14} />
+                  className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors flex items-center gap-1.5" title="Approve">
+                  <CheckCircle2 size={12} /> Approve
                 </button>
+              )}
+              {req.status === 'APPROVED' && (
+                <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium flex items-center gap-1.5">
+                  <CheckCircle2 size={12} /> Approved
+                </span>
               )}
             </div>
             <motion.span animate={{ rotate: expanded === req.id ? 180 : 0 }} transition={{ duration: 0.15 }}>
