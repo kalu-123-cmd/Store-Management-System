@@ -120,6 +120,7 @@ export const typeDefs = `#graphql
     returns: [SaleReturn!]!
     paymentMethod: String
     paymentStatus: String
+    creditAmount: Float
     branchId: String
     notes: String
     cogsAmount: Float
