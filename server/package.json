@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "npx prisma db push --accept-data-loss && node dist/index.js",
+    "start": "npx prisma db push && node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc --project tsconfig.build.json && npx prisma generate",
     "seed": "npx tsx prisma/seed.ts",
@@ -39,7 +39,8 @@
     "opossum": "^10.0.0",
     "prisma": "^5.22.0",
     "qrcode": "^1.5.4",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.1",

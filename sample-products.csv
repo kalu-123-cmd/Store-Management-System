@@ -1,0 +1,11 @@
+name,sku,category,stock,costPrice,sellingPrice
+Wireless Mouse,P001,Electronics,50,15.00,25.00
+Notebook A5,P002,Stationery,200,1.50,3.50
+Coffee Mug,P003,Kitchenware,30,5.00,12.00
+Ballpoint Pen,P004,Stationery,500,0.20,0.50
+Desk Lamp,P005,Furniture,15,20.00,45.00
+USB-C Cable,P006,Electronics,120,4.50,9.99
+Mechanical Keyboard,P007,Electronics,25,45.00,79.99
+Water Bottle 1L,P008,Accessories,85,6.00,14.99
+Office Chair,P009,Furniture,10,85.00,149.99
+External SSD 1TB,P010,Electronics,40,55.00,89.99

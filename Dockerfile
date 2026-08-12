@@ -1,52 +1,50 @@
-# Dockerfile for Public Resource & Procurement Management Platform
+# ─────────────────────────────────────────────────────────────────
+# StoreOS — Backend Docker image
+# Multi-stage build: build → production
+# ─────────────────────────────────────────────────────────────────
 
-# Build stage
-FROM node:18-alpine AS builder
+# ── Stage 1: Build ────────────────────────────────────────────────
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-COPY server/package*.json ./server/
-
-# Install dependencies
+# Copy server manifests first (better layer caching)
+COPY server/package*.json ./
 RUN npm ci
 
-# Copy source code
-COPY . .
+# Copy server source
+COPY server/ .
 
-# Build server
-WORKDIR /app/server
+# Generate Prisma client and compile TypeScript
 RUN npx prisma generate
 RUN npm run build
 
-# Production stage
-FROM node:18-alpine AS production
+# ── Stage 2: Production ───────────────────────────────────────────
+FROM node:20-alpine AS production
+
+# Security: run as non-root
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-COPY server/package*.json ./server/
+# Production dependencies only
+COPY server/package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Install production dependencies only
-RUN npm ci --only=production
+# Copy compiled output, Prisma schema and generated client
+COPY --from=builder /app/dist            ./dist
+COPY --from=builder /app/prisma          ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
-# Copy built server from builder
-COPY --from=builder /app/server/dist ./server/dist
-COPY --from=builder /app/server/node_modules ./server/node_modules
-COPY --from=builder /app/server/prisma ./server/prisma
-COPY --from=builder /app/server/src ./server/src
+# Create uploads directory
+RUN mkdir -p uploads && chown -R nodejs:nodejs /app
 
-# Copy uploads directory structure
-RUN mkdir -p uploads
+USER nodejs
 
-# Expose port
 EXPOSE 4000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:4000/health', (r) => {if(r.statusCode !== 200) process.exit(1)})"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:4000/health', r => { process.exit(r.statusCode === 200 ? 0 : 1) })"
 
-# Start server
-CMD ["node", "server/dist/index.js"]
+CMD ["node", "dist/index.js"]

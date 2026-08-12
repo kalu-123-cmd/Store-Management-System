@@ -382,36 +382,14 @@ async function startServer() {
   const server = new ApolloServer({
     typeDefs,
     resolvers,
-    csrfPrevention: true,
-    context: async ({ req }) => {
-      // Get user from token
-      const token = req.headers.authorization?.replace('Bearer ', '');
-      let user = null;
-      
-      if (token) {
-        try {
-          user = jwt.verify(token, JWT_SECRET);
-        } catch (error) {
-          console.warn('Invalid token:', error);
-        }
-      }
-
-      // Create DataLoaders for this request
-      const loaders = createDataLoaders(prisma);
-
-      return {
-        prisma,
-        user,
-        loaders,
-      };
-    },
+    csrfPrevention: false, // disabled — client uses Bearer token auth, not cookies
   });
 
   await server.start();
 
   app.use(
     '/graphql',
-    cors<cors.CorsRequest>(),
+    cors<cors.CorsRequest>(corsOptions),
     express.json(),
     expressMiddleware(server, {
       context: async ({ req }) => {

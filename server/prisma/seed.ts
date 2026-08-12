@@ -210,21 +210,38 @@ async function main() {
     }
   }
 
+  // ── Helper: build sale with correct VAT fields ────────────────────────────
+  function makeSale(invoiceNo: string, items: { productId: string; quantity: number; price: number }[]) {
+    const subtotal    = items.reduce((s, i) => s + i.quantity * i.price, 0);
+    const vatAmount   = Math.round(subtotal * 0.15 * 100) / 100;
+    const totalAmount = Math.round((subtotal + vatAmount) * 100) / 100;
+    return { invoiceNo, subtotal, vatAmount, totalAmount, items: { create: items } };
+  }
+
   // ── Sales (only if none exist) ─────────────────────────────────────────────
   const existingSales = await prisma.sale.count();
   if (existingSales === 0) {
-    await prisma.sale.create({ data: { invoiceNo: 'INV-1001', totalAmount: 24000, customerId: c1.id, userId: admin.id, items: { create: [{ productId: phone.id, quantity: 1, price: 24000 }] } } });
-    await prisma.sale.create({ data: { invoiceNo: 'INV-1002', totalAmount: 41500, customerId: c2.id, userId: admin.id, items: { create: [{ productId: laptop.id, quantity: 1, price: 35000 }, { productId: headphones.id, quantity: 1, price: 6500 }] } } });
-    await prisma.sale.create({ data: { invoiceNo: 'INV-1003', totalAmount: 4550,  customerId: c3.id, userId: admin.id, items: { create: [{ productId: shirt.id, quantity: 4, price: 650 }, { productId: coffeeProd.id, quantity: 5, price: 850 }] } } });
-    await prisma.sale.create({ data: { invoiceNo: 'INV-1004', totalAmount: 13000, customerId: c1.id, userId: admin.id, items: { create: [{ productId: watch.id, quantity: 1, price: 13000 }] } } });
-    await prisma.sale.create({ data: { invoiceNo: 'INV-1005', totalAmount: 9150,  customerId: c2.id, userId: admin.id, items: { create: [{ productId: jeans.id, quantity: 2, price: 1600 }, { productId: shirt.id, quantity: 3, price: 650 }, { productId: tea.id, quantity: 6, price: 480 }] } } });
+    const saleDefs = [
+      { inv: 'INV-1001', cust: c1.id, items: [{ productId: phone.id,      quantity: 1, price: 24000 }] },
+      { inv: 'INV-1002', cust: c2.id, items: [{ productId: laptop.id,     quantity: 1, price: 35000 }, { productId: headphones.id, quantity: 1, price: 6500 }] },
+      { inv: 'INV-1003', cust: c3.id, items: [{ productId: shirt.id,      quantity: 4, price: 650   }, { productId: coffeeProd.id, quantity: 5, price: 850  }] },
+      { inv: 'INV-1004', cust: c1.id, items: [{ productId: watch.id,      quantity: 1, price: 13000 }] },
+      { inv: 'INV-1005', cust: c2.id, items: [{ productId: jeans.id,      quantity: 2, price: 1600  }, { productId: shirt.id, quantity: 3, price: 650 }, { productId: tea.id, quantity: 6, price: 480 }] },
+      { inv: 'INV-1006', cust: c3.id, items: [{ productId: sneakers.id,   quantity: 2, price: 2200  }, { productId: watch.id, quantity: 1, price: 13000 }] },
+      { inv: 'INV-1007', cust: c1.id, items: [{ productId: coffeeProd.id, quantity: 10, price: 850  }, { productId: tea.id,  quantity: 5, price: 480 }] },
+      { inv: 'INV-1008', cust: c2.id, items: [{ productId: headphones.id, quantity: 1, price: 6500  }, { productId: shirt.id, quantity: 5, price: 650 }] },
+    ];
+    for (const s of saleDefs) {
+      const sale = makeSale(s.inv, s.items);
+      await prisma.sale.create({ data: { ...sale, customerId: s.cust, userId: admin.id } });
+    }
     await prisma.activityLog.createMany({ data: [
-      { userId: admin.id, action: 'SALE_COMPLETED',  details: 'Sale INV-1001 — ETB 24,000' },
-      { userId: admin.id, action: 'SALE_COMPLETED',  details: 'Sale INV-1002 — ETB 41,500' },
-      { userId: admin.id, action: 'SALE_COMPLETED',  details: 'Sale INV-1003 — ETB 4,550'  },
-      { userId: admin.id, action: 'SALE_COMPLETED',  details: 'Sale INV-1004 — ETB 13,000' },
-      { userId: admin.id, action: 'SALE_COMPLETED',  details: 'Sale INV-1005 — ETB 9,150'  },
-      { userId: admin.id, action: 'USER_LOGGED_IN',  details: 'Admin logged in'              },
+      { userId: admin.id, action: 'SALE_COMPLETED', details: 'Sale INV-1001 — ETB 24,000' },
+      { userId: admin.id, action: 'SALE_COMPLETED', details: 'Sale INV-1002 — ETB 41,500' },
+      { userId: admin.id, action: 'SALE_COMPLETED', details: 'Sale INV-1003 — ETB 4,550'  },
+      { userId: admin.id, action: 'SALE_COMPLETED', details: 'Sale INV-1004 — ETB 13,000' },
+      { userId: admin.id, action: 'SALE_COMPLETED', details: 'Sale INV-1005 — ETB 9,150'  },
+      { userId: admin.id, action: 'USER_LOGGED_IN',  details: 'Admin logged in'            },
     ]});
   }
 

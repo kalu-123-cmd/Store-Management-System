@@ -213,8 +213,8 @@ export const resolvers = {
           prisma.sale.findMany({ where: { createdAt: { gte: startOfMonth } }, include: { items: { include: { product: true } } } }),
           prisma.itemBatch.findMany({ where: { expiryDate: { lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) } } }),
           prisma.purchaseOrder.findMany({ where: { status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SENT'] } } }),
-          prisma.creditAccount.findMany({ where: { balance: { gt: 0 } } }),
-          prisma.creditAccount.findMany({ where: { balance: { lt: 0 } } }),
+          prisma.creditAccount.findMany({ where: { currentBalance: { gt: 0 } } }),
+          prisma.creditAccount.findMany({ where: { currentBalance: { lt: 0 } } }),
         ]);
 
         const inventoryValue = products.reduce((sum: number, p: any) => sum + p.costPrice * p.stock, 0);
@@ -227,8 +227,8 @@ export const resolvers = {
         const outOfStockCount = products.filter((p: any) => p.stock === 0).length;
         const expiringCount = expiringBatches.length;
         const pendingPurchases = pendingPurchaseOrders.length;
-        const outstandingReceivables = receivables.reduce((sum: number, r: any) => sum + r.balance, 0);
-        const outstandingPayables = Math.abs(payables.reduce((sum: number, p: any) => sum + p.balance, 0));
+        const outstandingReceivables = receivables.reduce((sum: number, r: any) => sum + (r.currentBalance || 0), 0);
+        const outstandingPayables = Math.abs(payables.reduce((sum: number, p: any) => sum + (p.currentBalance || 0), 0));
 
         return {
           totalProducts: products.length,

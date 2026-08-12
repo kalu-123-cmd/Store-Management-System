@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
-import { useMutation, useQuery, gql } from '@apollo/client';
-import { Upload, FileText, AlertTriangle, CheckCircle, Download, RefreshCw, Eye, Play, X, ChevronRight } from 'lucide-react';
+import { useMutation, useQuery, useApolloClient, gql } from '@apollo/client';
+import { useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
+import {
+  Upload, FileText, AlertTriangle, CheckCircle, Download,
+  RefreshCw, Eye, Play, X, ChevronRight,
+} from 'lucide-react';
 import { useToast } from '../components/Toast';
 
 // ── GraphQL ───────────────────────────────────────────────────────────────────
@@ -37,6 +42,7 @@ const IMPORT_PRODUCTS = gql`
         updated
         skipped
         failed
+        stockChanges
       }
       errors {
         rowNumber
@@ -68,7 +74,10 @@ const GET_IMPORT_HISTORY = gql`
   }
 `;
 
-// ── Types ───────────────────────────────────────────────────────────────────────
+// Queries to invalidate after a successful import so the dashboard refreshes
+const DASHBOARD_QUERIES = ['GetDashboardMain', 'GetActivity'];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ImportValidation {
   isValid: boolean;
@@ -90,10 +99,58 @@ interface ImportPreview {
   validations: ImportValidation[];
 }
 
+// ── Excel / CSV conversion helper ─────────────────────────────────────────────
+
+/**
+ * Accepts a File of any supported type (.csv, .xlsx, .xls) and resolves with
+ * a plain CSV string that the backend can parse.
+ */
+function readFileAsCSV(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      // Plain text — read as-is
+      reader.onload = (e) => resolve(e.target?.result as string ?? '');
+      reader.onerror = () => reject(new Error('Failed to read CSV file'));
+      reader.readAsText(file);
+    } else {
+      // Excel (.xlsx / .xls) — read as binary, convert first sheet → CSV
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const csv = XLSX.utils.sheet_to_csv(firstSheet);
+          resolve(csv);
+        } catch (err) {
+          reject(new Error('Failed to parse Excel file'));
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read Excel file'));
+      reader.readAsArrayBuffer(file);
+    }
+  });
+}
+
+const ACCEPTED_EXTENSIONS = ['.csv', '.xlsx', '.xls'];
+const ACCEPTED_MIME = [
+  'text/csv',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+].join(',');
+
+function isAcceptedFile(file: File): boolean {
+  return ACCEPTED_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext));
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function CSVImportPage() {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const apolloClient = useApolloClient();
+
   const [file, setFile] = useState<File | null>(null);
   const [csvContent, setCsvContent] = useState<string>('');
   const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'complete'>('upload');
@@ -104,93 +161,114 @@ export function CSVImportPage() {
   const [importProducts] = useMutation(IMPORT_PRODUCTS);
   const { data: historyData, refetch: refetchHistory } = useQuery(GET_IMPORT_HISTORY);
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // ── File selection ──────────────────────────────────────────────────────────
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
-    if (selectedFile) {
-      // Validate file type
-      if (!selectedFile.name.endsWith('.csv')) {
-        toast({
-          type: 'error',
-          title: 'Invalid file type',
-          message: 'Please select a CSV file',
-        });
-        return;
-      }
+    // Reset input so the same file can be re-selected after a reset
+    event.target.value = '';
 
-      // Validate file size (max 10MB)
-      if (selectedFile.size > 10 * 1024 * 1024) {
-        toast({
-          type: 'error',
-          title: 'File too large',
-          message: 'Maximum file size is 10MB',
-        });
-        return;
-      }
+    if (!selectedFile) return;
 
+    if (!isAcceptedFile(selectedFile)) {
+      toast({ type: 'error', title: 'Invalid file type', message: 'Please select a CSV or Excel (.xlsx / .xls) file' });
+      return;
+    }
+
+    if (selectedFile.size > 10 * 1024 * 1024) {
+      toast({ type: 'error', title: 'File too large', message: 'Maximum file size is 10 MB' });
+      return;
+    }
+
+    try {
+      const csv = await readFileAsCSV(selectedFile);
       setFile(selectedFile);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setCsvContent(e.target?.result as string);
-      };
-      reader.readAsText(selectedFile);
+      setCsvContent(csv);
+    } catch (err: any) {
+      toast({ type: 'error', title: 'Read error', message: err.message ?? 'Could not read file' });
     }
   };
 
+  // Drag-and-drop support
+  const handleDrop = async (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (!droppedFile) return;
+
+    if (!isAcceptedFile(droppedFile)) {
+      toast({ type: 'error', title: 'Invalid file type', message: 'Please drop a CSV or Excel (.xlsx / .xls) file' });
+      return;
+    }
+    if (droppedFile.size > 10 * 1024 * 1024) {
+      toast({ type: 'error', title: 'File too large', message: 'Maximum file size is 10 MB' });
+      return;
+    }
+
+    try {
+      const csv = await readFileAsCSV(droppedFile);
+      setFile(droppedFile);
+      setCsvContent(csv);
+    } catch (err: any) {
+      toast({ type: 'error', title: 'Read error', message: err.message ?? 'Could not read file' });
+    }
+  };
+
+  // ── Preview ─────────────────────────────────────────────────────────────────
+
   const handlePreview = async () => {
     if (!csvContent) return;
-
     try {
       const result = await previewImport({ variables: { csvContent } });
       setPreview(result.data.previewProductImport);
       setStep('preview');
-    } catch (error) {
-      toast({
-        type: 'error',
-        title: 'Preview failed',
-        message: 'Failed to analyze CSV file',
-      });
+    } catch {
+      toast({ type: 'error', title: 'Preview failed', message: 'Failed to analyse the file' });
     }
   };
 
+  // ── Import ──────────────────────────────────────────────────────────────────
+
   const handleImport = async () => {
     if (!csvContent) return;
-
     setStep('importing');
+
     try {
       const result = await importProducts({ variables: { csvContent } });
-      setImportResult(result.data.importProducts);
+      const data = result.data.importProducts;
+      setImportResult(data);
       setStep('complete');
-      
-      if (result.data.importProducts.success) {
+
+      const { created, updated, failed, stockChanges } = data.summary;
+
+      if (data.success) {
         toast({
           type: 'success',
           title: 'Import completed',
-          message: `Successfully imported ${result.data.importProducts.summary.created} products, updated ${result.data.importProducts.summary.updated}, ${result.data.importProducts.summary.stockChanges} stock changes`,
+          message: `Created ${created} · Updated ${updated} · Stock changes ${stockChanges}${failed > 0 ? ` · ${failed} failed` : ''}`,
         });
-        
-        // Wait a moment for database to settle
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Navigate to dashboard to see updated data
-        window.location.href = '/dashboard';
       } else {
         toast({
           type: 'warning',
           title: 'Import completed with errors',
-          message: `${result.data.importProducts.summary.failed} rows failed to import`,
+          message: `${failed} rows failed to import`,
         });
       }
-      
+
+      // Invalidate Apollo cache for dashboard queries so the next visit
+      // fetches fresh data, then navigate using React Router (no full reload).
+      await apolloClient.refetchQueries({ include: DASHBOARD_QUERIES });
       refetchHistory();
-    } catch (error) {
+    } catch (err: any) {
       toast({
         type: 'error',
         title: 'Import failed',
-        message: 'Failed to import products',
+        message: err?.message ?? 'An unexpected error occurred',
       });
       setStep('preview');
     }
   };
+
+  // ── Reset ───────────────────────────────────────────────────────────────────
 
   const handleReset = () => {
     setFile(null);
@@ -200,13 +278,13 @@ export function CSVImportPage() {
     setStep('upload');
   };
 
-  const downloadErrorReport = () => {
-    if (!importResult?.errors || importResult.errors.length === 0) return;
+  // ── Error report download ───────────────────────────────────────────────────
 
-    const csvContent = 'rowNumber,sku,error\n' + 
-      importResult.errors.map(e => `${e.rowNumber},${e.sku},"${e.error}"`).join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+  const downloadErrorReport = () => {
+    if (!importResult?.errors?.length) return;
+    const content = 'rowNumber,sku,error\n' +
+      importResult.errors.map((e: any) => `${e.rowNumber},${e.sku},"${e.error}"`).join('\n');
+    const blob = new Blob([content], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -215,28 +293,38 @@ export function CSVImportPage() {
     URL.revokeObjectURL(url);
   };
 
+  // ── Derived ─────────────────────────────────────────────────────────────────
+
+  // Allow import when at least one valid row exists (errors rows are just skipped)
+  const canImport = preview ? preview.validRows > 0 : false;
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  // ── Step: upload ────────────────────────────────────────────────────────────
   if (step === 'upload') {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">CSV Product Import</h2>
-            <p className="text-sm text-slate-600">Import products from CSV files into your inventory</p>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">CSV / Excel Product Import</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Import products from CSV or Excel files (.csv, .xlsx, .xls) into your inventory
+            </p>
           </div>
           <button
             onClick={() => refetchHistory()}
-            className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
+            className="flex items-center space-x-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
           >
             <RefreshCw className="h-4 w-4" />
             <span>Refresh History</span>
           </button>
         </div>
 
-        {/* Upload Area */}
-        <div className="border-2 border-dashed border-slate-300 rounded-xl p-12 text-center">
+        {/* Upload area */}
+        <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-12 text-center">
           <input
             type="file"
-            accept=".csv"
+            accept={ACCEPTED_MIME + ',' + ACCEPTED_EXTENSIONS.join(',')}
             onChange={handleFileSelect}
             className="hidden"
             id="csv-upload"
@@ -244,31 +332,31 @@ export function CSVImportPage() {
           <label
             htmlFor="csv-upload"
             className="cursor-pointer flex flex-col items-center space-y-4"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
           >
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-              <Upload className="h-8 w-8 text-blue-600" />
+            <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+              <Upload className="h-8 w-8 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <p className="text-lg font-medium text-slate-900">Select CSV file</p>
-              <p className="text-sm text-slate-600">Drag and drop or click to browse</p>
+              <p className="text-lg font-medium text-slate-900 dark:text-white">Select or drag a file</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">CSV or Excel format</p>
             </div>
-            <p className="text-xs text-slate-500">Supported format: .csv (max 10MB)</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Supported: .csv · .xlsx · .xls (max 10 MB)</p>
           </label>
         </div>
 
+        {/* Selected file badge */}
         {file && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <FileText className="h-5 w-5 text-blue-600" />
+              <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <div>
-                <p className="font-medium text-slate-900">{file.name}</p>
-                <p className="text-sm text-slate-600">{(file.size / 1024).toFixed(2)} KB</p>
+                <p className="font-medium text-slate-900 dark:text-white">{file.name}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">{(file.size / 1024).toFixed(2)} KB</p>
               </div>
             </div>
-            <button
-              onClick={() => setFile(null)}
-              className="text-slate-500 hover:text-slate-700"
-            >
+            <button onClick={() => { setFile(null); setCsvContent(''); }} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -284,47 +372,57 @@ export function CSVImportPage() {
           </button>
         )}
 
-        {/* Import History */}
-        {historyData?.getImportHistory && historyData.getImportHistory.length > 0 && (
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200">
-              <h3 className="font-semibold text-slate-900">Import History</h3>
+        {/* Template download hint */}
+        <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+          <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Required columns</h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            Your file must include these column headers (exact names or common aliases are accepted):
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {['name', 'sku', 'category', 'stock', 'costPrice', 'sellingPrice'].map((col) => (
+              <span key={col} className="px-2 py-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono text-slate-700 dark:text-slate-300">
+                {col}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-3">
+            Optional: <span className="font-mono">barcode</span> · <span className="font-mono">margin</span> · <span className="font-mono">brand</span>
+          </p>
+        </div>
+
+        {/* Import history */}
+        {historyData?.getImportHistory?.length > 0 && (
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+              <h3 className="font-semibold text-slate-900 dark:text-white">Import History</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-slate-50">
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">File</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Rows</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Created</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Updated</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Failed</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Stock Changes</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Status</th>
+                  <tr className="bg-slate-50 dark:bg-slate-700/50">
+                    {['Date', 'File', 'User', 'Rows', 'Created', 'Updated', 'Failed', 'Stock Δ', 'Status'].map((h) => (
+                      <th key={h} className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {historyData.getImportHistory.map((history: any) => (
-                    <tr key={history.id} className="border-b border-slate-100">
-                      <td className="px-6 py-4 text-sm text-slate-900">
-                        {new Date(history.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{history.fileName}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{history.userName}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{history.totalRows}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{history.created}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{history.updated}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{history.failed}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{history.stockChanges}</td>
+                  {historyData.getImportHistory.map((h: any) => (
+                    <tr key={h.id} className="border-b border-slate-100 dark:border-slate-700">
+                      <td className="px-6 py-4 text-sm text-slate-900 dark:text-slate-200">{new Date(h.createdAt).toLocaleDateString()}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900 dark:text-slate-200">{h.fileName}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900 dark:text-slate-200">{h.userName}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900 dark:text-slate-200">{h.totalRows}</td>
+                      <td className="px-6 py-4 text-sm text-green-600 font-medium">{h.created}</td>
+                      <td className="px-6 py-4 text-sm text-blue-600 font-medium">{h.updated}</td>
+                      <td className="px-6 py-4 text-sm text-red-600 font-medium">{h.failed}</td>
+                      <td className="px-6 py-4 text-sm text-amber-600 font-medium">{h.stockChanges}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          history.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-                          history.status === 'PARTIAL' ? 'bg-amber-100 text-amber-700' :
-                          'bg-red-100 text-red-700'
+                          h.status === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                          h.status === 'PARTIAL'   ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                     'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                         }`}>
-                          {history.status}
+                          {h.status}
                         </span>
                       </td>
                     </tr>
@@ -338,107 +436,102 @@ export function CSVImportPage() {
     );
   }
 
+  // ── Step: preview ────────────────────────────────────────────────────────────
   if (step === 'preview' && preview) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Import Preview</h2>
-            <p className="text-sm text-slate-600">Review and validate your CSV data before importing</p>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Import Preview</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Review data before importing — rows with errors will be skipped automatically</p>
           </div>
-          <button
-            onClick={handleReset}
-            className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
-          >
+          <button onClick={handleReset} className="flex items-center space-x-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
             <X className="h-4 w-4" />
             <span>Cancel</span>
           </button>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-6">
-            <div className="text-sm text-slate-600 mb-1">Total Rows</div>
-            <div className="text-3xl font-bold text-slate-900">{preview.totalRows}</div>
-          </div>
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6">
-            <div className="text-sm text-green-700 mb-1">Valid</div>
-            <div className="text-3xl font-bold text-green-700">{preview.validRows}</div>
-          </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
-            <div className="text-sm text-amber-700 mb-1">Warnings</div>
-            <div className="text-3xl font-bold text-amber-700">{preview.warningRows}</div>
-          </div>
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6">
-            <div className="text-sm text-red-700 mb-1">Errors</div>
-            <div className="text-3xl font-bold text-red-700">{preview.errorRows}</div>
-          </div>
+        {/* Summary cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Rows',  value: preview.totalRows,   cls: 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800',      txt: 'text-slate-900 dark:text-white' },
+            { label: 'Valid',       value: preview.validRows,   cls: 'border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20',  txt: 'text-green-700 dark:text-green-400' },
+            { label: 'Warnings',    value: preview.warningRows, cls: 'border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20',  txt: 'text-amber-700 dark:text-amber-400' },
+            { label: 'Errors',      value: preview.errorRows,   cls: 'border-red-200   dark:border-red-700   bg-red-50   dark:bg-red-900/20',    txt: 'text-red-700   dark:text-red-400' },
+          ].map(({ label, value, cls, txt }) => (
+            <div key={label} className={`border rounded-xl p-6 ${cls}`}>
+              <div className={`text-sm mb-1 ${txt}`}>{label}</div>
+              <div className={`text-3xl font-bold ${txt}`}>{value}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Import Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <div className="text-sm text-blue-700 mb-1">Will Create</div>
-            <div className="text-2xl font-bold text-blue-700">{preview.createCount}</div>
-          </div>
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-            <div className="text-sm text-purple-700 mb-1">Will Update</div>
-            <div className="text-2xl font-bold text-purple-700">{preview.updateCount}</div>
-          </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-            <div className="text-sm text-slate-700 mb-1">Will Skip</div>
-            <div className="text-2xl font-bold text-slate-700">{preview.skipCount}</div>
-          </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-            <div className="text-sm text-amber-700 mb-1">Stock Changes</div>
-            <div className="text-2xl font-bold text-amber-700">{preview.updateCount}</div>
-          </div>
+        {/* Action breakdown */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Will Create',       value: preview.createCount,  cls: 'border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20',     txt: 'text-blue-700 dark:text-blue-400' },
+            { label: 'Will Update',       value: preview.updateCount,  cls: 'border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20', txt: 'text-purple-700 dark:text-purple-400' },
+            { label: 'Will Skip',         value: preview.skipCount,    cls: 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800',      txt: 'text-slate-700 dark:text-slate-300' },
+            { label: 'Rows with Errors',  value: preview.errorRows,    cls: 'border-red-200 dark:border-red-700 bg-red-50 dark:bg-red-900/20',           txt: 'text-red-700 dark:text-red-400' },
+          ].map(({ label, value, cls, txt }) => (
+            <div key={label} className={`border rounded-xl p-4 ${cls}`}>
+              <div className={`text-sm mb-1 ${txt}`}>{label}</div>
+              <div className={`text-2xl font-bold ${txt}`}>{value}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Validation Table */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <h3 className="font-semibold text-slate-900">Validation Results</h3>
+        {preview.errorRows > 0 && (
+          <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-4 py-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              <span className="font-semibold">{preview.errorRows} rows have errors</span> and will be skipped. The remaining{' '}
+              <span className="font-semibold">{preview.validRows} valid rows</span> will still be imported.
+            </p>
+          </div>
+        )}
+
+        {/* Validation table */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <h3 className="font-semibold text-slate-900 dark:text-white">Validation Results</h3>
           </div>
           <div className="overflow-x-auto max-h-96">
             <table className="w-full">
               <thead>
-                <tr className="bg-slate-50">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Row</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Product</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">SKU</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Category</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Action</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Status</th>
+                <tr className="bg-slate-50 dark:bg-slate-700/50">
+                  {['Row', 'Product', 'SKU', 'Category', 'Action', 'Status'].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {preview.validations.map((validation, index) => (
-                  <tr key={index} className="border-b border-slate-100">
-                    <td className="px-4 py-3 text-sm text-slate-900">{validation.rowNumber}</td>
-                    <td className="px-4 py-3 text-sm text-slate-900">{validation.data.name}</td>
-                    <td className="px-4 py-3 text-sm text-slate-900">{validation.data.sku}</td>
-                    <td className="px-4 py-3 text-sm text-slate-900">{validation.data.category}</td>
+                {preview.validations.map((v, i) => (
+                  <tr key={i} className="border-b border-slate-100 dark:border-slate-700">
+                    <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-200">{v.rowNumber}</td>
+                    <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-200">{v.data.name}</td>
+                    <td className="px-4 py-3 text-sm font-mono text-slate-900 dark:text-slate-200">{v.data.sku}</td>
+                    <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-200">{v.data.category}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 text-xs font-medium rounded ${
-                        validation.action === 'CREATE' ? 'bg-blue-100 text-blue-700' :
-                        validation.action === 'UPDATE' ? 'bg-purple-100 text-purple-700' :
-                        validation.action === 'SKIP' ? 'bg-slate-100 text-slate-700' :
-                        'bg-red-100 text-red-700'
+                        v.action === 'CREATE' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                        v.action === 'UPDATE' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
+                        v.action === 'SKIP'   ? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300' :
+                                                'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                       }`}>
-                        {validation.action}
+                        {v.action}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      {validation.isValid ? (
-                        <span className="flex items-center space-x-1 text-green-600">
+                      {v.isValid ? (
+                        <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
                           <CheckCircle className="h-4 w-4" />
-                          <span className="text-sm">Valid</span>
+                          <span className="text-sm">{v.warnings.length > 0 ? v.warnings[0] : 'Valid'}</span>
                         </span>
                       ) : (
-                        <span className="flex items-center space-x-1 text-red-600">
+                        <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
                           <AlertTriangle className="h-4 w-4" />
-                          <span className="text-sm">{validation.errors[0]}</span>
+                          <span className="text-sm">{v.errors[0]}</span>
                         </span>
                       )}
                     </td>
@@ -451,78 +544,65 @@ export function CSVImportPage() {
 
         {/* Actions */}
         <div className="flex justify-end space-x-4">
-          <button
-            onClick={handleReset}
-            className="px-6 py-3 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
-          >
+          <button onClick={handleReset} className="px-6 py-3 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
             Cancel
           </button>
           <button
             onClick={handleImport}
-            disabled={preview.errorRows > 0}
+            disabled={!canImport}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
           >
             <Play className="h-5 w-5" />
-            <span>Import Products</span>
+            <span>Import {preview.validRows} Valid Rows</span>
           </button>
         </div>
       </div>
     );
   }
 
+  // ── Step: importing ──────────────────────────────────────────────────────────
   if (step === 'importing') {
     return (
-      <div className="flex flex-col items-center justify-center h-64">
-        <RefreshCw className="animate-spin text-blue-600 h-12 w-12 mb-4" />
-        <p className="text-lg text-slate-600">Importing products...</p>
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <RefreshCw className="animate-spin text-blue-600 h-12 w-12" />
+        <p className="text-lg text-slate-600 dark:text-slate-400">Importing products…</p>
+        <p className="text-sm text-slate-500 dark:text-slate-500">Please wait, do not close this page</p>
       </div>
     );
   }
 
+  // ── Step: complete ───────────────────────────────────────────────────────────
   if (step === 'complete' && importResult) {
+    const { created, updated, skipped, failed, stockChanges, totalProcessed } = importResult.summary;
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Import Complete</h2>
-            <p className="text-sm text-slate-600">Your products have been imported successfully</p>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Import Complete</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Your products have been imported — the dashboard has been updated</p>
           </div>
-          <button
-            onClick={handleReset}
-            className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
-          >
+          <button onClick={handleReset} className="flex items-center space-x-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
             <ChevronRight className="h-4 w-4" />
             <span>Import More</span>
           </button>
         </div>
 
-        {/* Summary */}
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
-            <div>
-              <div className="text-sm text-slate-600 mb-1">Total Processed</div>
-              <div className="text-3xl font-bold text-slate-900">{importResult.summary.totalProcessed}</div>
-            </div>
-            <div>
-              <div className="text-sm text-green-600 mb-1">Created</div>
-              <div className="text-3xl font-bold text-green-600">{importResult.summary.created}</div>
-            </div>
-            <div>
-              <div className="text-sm text-blue-600 mb-1">Updated</div>
-              <div className="text-3xl font-bold text-blue-600">{importResult.summary.updated}</div>
-            </div>
-            <div>
-              <div className="text-sm text-slate-600 mb-1">Skipped</div>
-              <div className="text-3xl font-bold text-slate-600">{importResult.summary.skipped}</div>
-            </div>
-            <div>
-              <div className="text-sm text-red-600 mb-1">Failed</div>
-              <div className="text-3xl font-bold text-red-600">{importResult.summary.failed}</div>
-            </div>
-            <div>
-              <div className="text-sm text-amber-600 mb-1">Stock Changes</div>
-              <div className="text-3xl font-bold text-amber-600">{importResult.summary.stockChanges}</div>
-            </div>
+        {/* Result summary */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-6">
+            {[
+              { label: 'Total',   value: totalProcessed, cls: 'text-slate-900 dark:text-white' },
+              { label: 'Created', value: created,        cls: 'text-green-600 dark:text-green-400' },
+              { label: 'Updated', value: updated,        cls: 'text-blue-600 dark:text-blue-400' },
+              { label: 'Skipped', value: skipped,        cls: 'text-slate-600 dark:text-slate-400' },
+              { label: 'Failed',  value: failed,         cls: 'text-red-600 dark:text-red-400' },
+              { label: 'Stock Δ', value: stockChanges,   cls: 'text-amber-600 dark:text-amber-400' },
+            ].map(({ label, value, cls }) => (
+              <div key={label}>
+                <div className={`text-sm mb-1 ${cls}`}>{label}</div>
+                <div className={`text-3xl font-bold ${cls}`}>{value}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -530,15 +610,21 @@ export function CSVImportPage() {
         <div className="flex justify-between">
           <div className="flex space-x-4">
             <button
-              onClick={() => window.location.href = '/products'}
+              onClick={() => navigate('/dashboard')}
               className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Go to Dashboard
+            </button>
+            <button
+              onClick={() => navigate('/products')}
+              className="px-6 py-3 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
             >
               View Products
             </button>
-            {importResult.errors.length > 0 && (
+            {importResult.errors?.length > 0 && (
               <button
                 onClick={downloadErrorReport}
-                className="px-6 py-3 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors flex items-center space-x-2"
+                className="px-6 py-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex items-center space-x-2"
               >
                 <Download className="h-5 w-5" />
                 <span>Download Error Report</span>
@@ -546,6 +632,35 @@ export function CSVImportPage() {
             )}
           </div>
         </div>
+
+        {/* Error details (if any) */}
+        {importResult.errors?.length > 0 && (
+          <div className="bg-white dark:bg-slate-800 border border-red-200 dark:border-red-700 rounded-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-red-200 dark:border-red-700 bg-red-50 dark:bg-red-900/20">
+              <h3 className="font-semibold text-red-800 dark:text-red-300">Failed Rows ({importResult.errors.length})</h3>
+            </div>
+            <div className="overflow-x-auto max-h-64">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-red-50 dark:bg-red-900/10">
+                    {['Row', 'SKU', 'Error'].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-red-600 dark:text-red-400 uppercase">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {importResult.errors.map((e: any, i: number) => (
+                    <tr key={i} className="border-b border-red-100 dark:border-red-800">
+                      <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-200">{e.rowNumber}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-slate-900 dark:text-slate-200">{e.sku}</td>
+                      <td className="px-4 py-3 text-sm text-red-600 dark:text-red-400">{e.error}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
