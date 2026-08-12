@@ -1,0 +1,6 @@
+name,sku,category,stock,costPrice,sellingPrice,margin
+Test Product 1,TEST-001,Electronics,25,500.00,600.00,16.7
+Test Product 2,TEST-002,Electronics,30,750.00,900.00,16.7
+Test Product 3,TEST-003,Electronics,15,1000.00,1200.00,16.7
+Test Product 4,TEST-004,Electronics,20,300.00,350.00,14.3
+Test Product 5,TEST-005,Electronics,10,1500.00,1800.00,16.7

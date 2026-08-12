@@ -191,7 +191,7 @@ export default function Dashboard() {
 
   const { data, loading, refetch } = useQuery(GET_DASHBOARD_MAIN, {
     variables: { year: chartYear, month: chartMonth },
-    fetchPolicy: 'cache-first',
+    fetchPolicy: 'network-only',
     errorPolicy: 'ignore',
   });
   const { data: actData } = useQuery(GET_ACTIVITY, { fetchPolicy: 'cache-and-network', errorPolicy: 'ignore' });

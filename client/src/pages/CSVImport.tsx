@@ -68,28 +68,6 @@ const GET_IMPORT_HISTORY = gql`
   }
 `;
 
-const GET_DASHBOARD_STATS = gql`
-  query GetDashboardStats {
-    dashboardStats {
-      totalProducts
-      totalCategories
-      totalSuppliers
-      totalCustomers
-      inventoryValue
-      todaySales
-      monthlyRevenue
-      monthlyProfit
-      lowStockCount
-      outOfStockCount
-      totalStock
-      expiringCount
-      pendingPurchases
-      outstandingReceivables
-      outstandingPayables
-    }
-  }
-`;
-
 // ── Types ───────────────────────────────────────────────────────────────────────
 
 interface ImportValidation {
@@ -125,7 +103,6 @@ export function CSVImportPage() {
   const [previewImport] = useMutation(PREVIEW_IMPORT);
   const [importProducts] = useMutation(IMPORT_PRODUCTS);
   const { data: historyData, refetch: refetchHistory } = useQuery(GET_IMPORT_HISTORY);
-  const { refetch: refetchDashboard } = useQuery(GET_DASHBOARD_STATS, { skip: true });
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -191,8 +168,8 @@ export function CSVImportPage() {
           message: `Successfully imported ${result.data.importProducts.summary.created} products, updated ${result.data.importProducts.summary.updated}, ${result.data.importProducts.summary.stockChanges} stock changes`,
         });
         
-        // Automatically refresh dashboard data
-        await refetchDashboard();
+        // Wait a moment for database to settle
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Navigate to dashboard to see updated data
         window.location.href = '/dashboard';
