@@ -2442,10 +2442,10 @@ export const resolvers = {
       });
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to create procurement request');
+        throw new Error((result as any).error || 'Failed to create procurement request');
       }
 
-      return result.request;
+      return (result as any).request;
     },
 
     updateProcurementRequest: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
@@ -2544,10 +2544,10 @@ export const resolvers = {
       const result = await procurementService.submitProcurementRequest(id, user.id);
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to submit procurement request');
+        throw new Error((result as any).error || 'Failed to submit procurement request');
       }
 
-      return result.request;
+      return (result as any).request;
     },
     approveProcurementRequest: async (_: any, { id, comments }: any, { prisma, user }: any) => {
       requirePermission(user, 'procurement:approve', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
@@ -2556,10 +2556,10 @@ export const resolvers = {
       const result = await procurementService.approveProcurementRequest(id, user.id, comments);
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to approve procurement request');
+        throw new Error((result as any).error || 'Failed to approve procurement request');
       }
 
-      return result.request;
+      return (result as any).request;
     },
 
     receiveGoods: async (_: any, { purchaseOrderId, items, notes, warehouseId }: any, { prisma, user }: any) => {
@@ -2579,10 +2579,10 @@ export const resolvers = {
       });
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to receive goods');
+        throw new Error((result as any).error || 'Failed to receive goods');
       }
 
-      return result.goodsReceipt;
+      return (result as any).goodsReceipt;
     },
 
     // CSV Import mutations

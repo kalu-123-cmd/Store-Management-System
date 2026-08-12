@@ -43,7 +43,7 @@ export function VisionCheckout({ onProductDetected, onError, language = 'ENGLISH
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const detectionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Start camera stream
   const startCamera = async () => {

@@ -248,7 +248,7 @@ const en = {
       download: 'Download PDF',
       status: 'Status',
       pending: 'Pending',
-      paid: 'Paid',
+      paidStatus: 'Paid',
       overdue: 'Overdue',
     },
 
@@ -438,7 +438,7 @@ const am = {
       download: 'PDF አውርዝ',
       status: 'ሁኔታ',
       pending: 'በጊዜ ላይ',
-      paid: 'ተከፈለ',
+      paidStatus: 'ተከፈለ',
       overdue: 'ጊዜ ያለፈ',
     },
 

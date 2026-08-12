@@ -361,7 +361,7 @@ export async function processBatchStockOutAtomic(
       const results: StockOutResult[] = [];
 
       for (const request of requests) {
-        const result = await processStockOutAtomic(tx, request);
+        const result = await processStockOutAtomic(tx as any, request);
         results.push(result);
 
         if (!result.success) {

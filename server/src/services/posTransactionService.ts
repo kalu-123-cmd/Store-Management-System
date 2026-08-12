@@ -223,18 +223,18 @@ export async function createSaleTransaction(
           subtotal: subtotal.toNumber(),
           vatAmount: vatAmount.toNumber(),
           totalAmount: totalAmount.toNumber(),
-          customerId: request.customerId,
+          ...(request.customerId ? { customer: { connect: { id: request.customerId } } } : {}),
           paymentMethod: request.paymentMethod,
           paymentStatus: 'PAID',
           notes: request.notes,
-        },
+        } as any,
       });
 
       // Step 6: Create sale items and deduct stock
       const saleItems = [];
       for (const { item, product, itemSubtotal } of itemCalculations) {
         // Deduct stock using FEFO
-        const stockResult = await processStockOutAtomic(tx, {
+        const stockResult = await processStockOutAtomic(tx as any, {
           productId: item.productId,
           quantity: item.quantity,
           userId: request.cashierId,

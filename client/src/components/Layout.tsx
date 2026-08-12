@@ -219,7 +219,7 @@ export default function Layout() {
           <div className="flex items-center gap-1.5">
             <BranchSelector />
             <StockAlertBell />
-            <LanguageSwitcher lang={lang} setLang={setLang} />
+            <LanguageSwitcher />
             <button
               onClick={() => setDark(d => !d)}
               aria-label="Toggle dark mode"

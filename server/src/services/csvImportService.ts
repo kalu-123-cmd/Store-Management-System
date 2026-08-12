@@ -40,6 +40,7 @@ export interface ProductCSVRow {
   costPrice: string;
   sellingPrice: string;
   margin?: string;
+  barcode?: string;
 }
 
 export interface InventoryCSVRow {
@@ -592,8 +593,11 @@ export class CSVImportService {
 
     return history.map(h => ({
       ...h,
+      importType: h.importType as 'PRODUCTS' | 'INVENTORY',
+      status: h.status as 'COMPLETED' | 'PARTIAL' | 'FAILED',
+      errorMessage: h.errorMessage ?? undefined,
       userName: userMap.get(h.userId) || 'Unknown',
-    }));
+    })) as ImportHistory[];
   }
 }
 

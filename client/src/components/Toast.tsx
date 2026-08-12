@@ -4,6 +4,12 @@ import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+interface ToastOptions {
+  type: ToastType;
+  title: string;
+  message?: string;
+}
+
 interface Toast {
   id: string;
   type: ToastType;
@@ -11,12 +17,20 @@ interface Toast {
   message?: string;
 }
 
+// Supports both:
+//   toast('success', 'Title', 'Message')   ← positional (legacy)
+//   toast({ type:'success', title:'Title', message:'Message' })  ← object (new)
+type ToastFn = {
+  (options: ToastOptions): void;
+  (type: ToastType, title: string, message?: string): void;
+};
+
 interface ToastContextValue {
-  toast: (type: ToastType, title: string, message?: string) => void;
+  toast: ToastFn;
   success: (title: string, message?: string) => void;
-  error: (title: string, message?: string) => void;
+  error:   (title: string, message?: string) => void;
   warning: (title: string, message?: string) => void;
-  info: (title: string, message?: string) => void;
+  info:    (title: string, message?: string) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -42,11 +56,31 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const toast = useCallback((type: ToastType, title: string, message?: string) => {
+  const toast = useCallback((
+    typeOrOptions: ToastType | ToastOptions,
+    titleArg?: string,
+    messageArg?: string,
+  ) => {
+    let type: ToastType;
+    let title: string;
+    let message: string | undefined;
+
+    if (typeof typeOrOptions === 'object') {
+      // Object form: toast({ type, title, message })
+      type    = typeOrOptions.type;
+      title   = typeOrOptions.title;
+      message = typeOrOptions.message;
+    } else {
+      // Positional form: toast('success', 'Title', 'Message')
+      type    = typeOrOptions;
+      title   = titleArg!;
+      message = messageArg;
+    }
+
     const id = Math.random().toString(36).slice(2);
     setToasts(prev => [...prev.slice(-4), { id, type, title, message }]);
     setTimeout(() => dismiss(id), 4000);
-  }, [dismiss]);
+  }, [dismiss]) as ToastFn;
 
   const success = useCallback((t: string, m?: string) => toast('success', t, m), [toast]);
   const error   = useCallback((t: string, m?: string) => toast('error', t, m),   [toast]);
