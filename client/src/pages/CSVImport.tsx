@@ -68,8 +68,8 @@ const GET_IMPORT_HISTORY = gql`
   }
 `;
 
-const REFRESH_DASHBOARD = gql`
-  query RefreshDashboard {
+const GET_DASHBOARD_STATS = gql`
+  query GetDashboardStats {
     dashboardStats {
       totalProducts
       totalCategories
@@ -125,7 +125,7 @@ export function CSVImportPage() {
   const [previewImport] = useMutation(PREVIEW_IMPORT);
   const [importProducts] = useMutation(IMPORT_PRODUCTS);
   const { data: historyData, refetch: refetchHistory } = useQuery(GET_IMPORT_HISTORY);
-  const { refetch: refetchDashboard } = useQuery(REFRESH_DASHBOARD, { skip: true });
+  const { refetch: refetchDashboard } = useQuery(GET_DASHBOARD_STATS, { skip: true });
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -193,6 +193,9 @@ export function CSVImportPage() {
         
         // Automatically refresh dashboard data
         await refetchDashboard();
+        
+        // Navigate to dashboard to see updated data
+        window.location.href = '/dashboard';
       } else {
         toast({
           type: 'warning',

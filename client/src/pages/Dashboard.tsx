@@ -175,9 +175,9 @@ export default function Dashboard() {
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  const { data, loading } = useQuery(GET_DASHBOARD_MAIN, {
+  const { data, loading, refetch } = useQuery(GET_DASHBOARD_MAIN, {
     variables: { year: chartYear, month: chartMonth },
-    fetchPolicy: 'cache-and-network',
+    fetchPolicy: 'network-only', // Always fetch fresh data to show CSV imports
   });
   const { data: actData } = useQuery(GET_ACTIVITY, { fetchPolicy: 'cache-and-network', errorPolicy: 'ignore' });
 
