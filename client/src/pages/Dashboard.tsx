@@ -16,9 +16,21 @@ import {
 const GET_DASHBOARD_MAIN = gql`
   query GetDashboardMain($year: Int, $month: Int) {
     dashboardStats {
-      totalProducts totalCategories totalSuppliers totalCustomers
-      inventoryValue todaySales monthlyRevenue monthlyProfit
-      lowStockCount outOfStockCount
+      totalProducts
+      totalCategories
+      totalSuppliers
+      totalCustomers
+      inventoryValue
+      todaySales
+      monthlyRevenue
+      monthlyProfit
+      lowStockCount
+      outOfStockCount
+      totalStock
+      expiringCount
+      pendingPurchases
+      outstandingReceivables
+      outstandingPayables
     }
     lowStockProducts {
       id name stock minStockLevel
@@ -32,7 +44,9 @@ const GET_DASHBOARD_MAIN = gql`
       date revenue profit count
     }
     salesByCategory {
-      name revenue count
+      category
+      totalSales
+      totalRevenue
     }
   }
 `;
@@ -57,7 +71,7 @@ function printDashboardPDF(stats: any, chartData: any[], catData: any[], recentS
   ).join('');
 
   const cats = catData.map(c =>
-    `<tr><td>${c.name}</td><td>${fmt(c.revenue)}</td><td>${c.count}</td></tr>`
+    `<tr><td>${c.category}</td><td>${fmt(c.totalRevenue)}</td><td>${c.totalSales}</td></tr>`
   ).join('');
 
   const w = window.open('', '_blank', 'width=900,height=700');
@@ -177,7 +191,8 @@ export default function Dashboard() {
 
   const { data, loading, refetch } = useQuery(GET_DASHBOARD_MAIN, {
     variables: { year: chartYear, month: chartMonth },
-    fetchPolicy: 'network-only', // Always fetch fresh data to show CSV imports
+    fetchPolicy: 'cache-first',
+    errorPolicy: 'ignore',
   });
   const { data: actData } = useQuery(GET_ACTIVITY, { fetchPolicy: 'cache-and-network', errorPolicy: 'ignore' });
 
@@ -310,8 +325,8 @@ export default function Dashboard() {
                   <PieChart>
                     <Pie
                       data={catData}
-                      dataKey="revenue"
-                      nameKey="name"
+                      dataKey="totalRevenue"
+                      nameKey="category"
                       cx="50%" cy="50%"
                       innerRadius={50}
                       outerRadius={80}
@@ -331,12 +346,12 @@ export default function Dashboard() {
               </div>
               <div className="space-y-2 mt-3">
                 {catData.slice(0, 4).map((c: any, i: number) => (
-                  <div key={c.name} className="flex items-center justify-between text-xs">
+                  <div key={c.category} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                      <span className="text-muted-foreground truncate max-w-[100px]">{c.name}</span>
+                      <span className="text-muted-foreground truncate max-w-[100px]">{c.category}</span>
                     </div>
-                    <span className="font-semibold text-foreground">{fmtInt(c.revenue)}</span>
+                    <span className="font-semibold text-foreground">{fmtInt(c.totalRevenue)}</span>
                   </div>
                 ))}
               </div>

@@ -63,7 +63,7 @@ const client = new ApolloClient({
   link: from([errorLink, authLink, httpLink]),
   cache: new InMemoryCache(),
   defaultOptions: {
-    watchQuery: { fetchPolicy: 'cache-first' },
+    watchQuery: { fetchPolicy: 'cache-first', errorPolicy: 'ignore' },
   },
 })
 

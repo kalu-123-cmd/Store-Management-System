@@ -24,7 +24,7 @@ const GET_REPORTS = gql`
       category { name }
       saleItems { quantity price }
     }
-    salesByCategory { name revenue count }
+    salesByCategory { category totalSales totalRevenue }
     monthlySalesByDay(startDate: $startDate, endDate: $endDate) { date revenue profit count }
   }
 `;
@@ -283,7 +283,7 @@ export default function Reports() {
               <div className="h-[180px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={catData} dataKey="revenue" nameKey="name"
+                    <Pie data={catData} dataKey="totalRevenue" nameKey="category"
                       cx="50%" cy="50%" innerRadius={48} outerRadius={78} paddingAngle={3} strokeWidth={0}>
                       {catData.map((_: any, i: number) => (
                         <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
@@ -295,13 +295,13 @@ export default function Reports() {
               </div>
               <div className="space-y-2 mt-3">
                 {catData.slice(0, 5).map((c: any, i: number) => (
-                  <div key={c.name} className="flex items-center justify-between text-xs">
+                  <div key={c.category} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full shrink-0"
                         style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                      <span className="text-muted-foreground">{c.name}</span>
+                      <span className="text-muted-foreground">{c.category}</span>
                     </div>
-                    <span className="font-semibold text-foreground">{fmtInt(c.revenue)}</span>
+                    <span className="font-semibold text-foreground">{fmtInt(c.totalRevenue)}</span>
                   </div>
                 ))}
               </div>
