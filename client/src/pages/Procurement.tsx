@@ -489,7 +489,7 @@ function RequestsTab({ requests, loading, refetch }: any) {
             </div>
             <div className="text-right shrink-0">
               <p className="text-sm font-semibold text-foreground">{fmt(req.estimatedTotal)}</p>
-              <p className="text-xs text-muted-foreground">{req.items.length} items · Due {new Date(req.requiredDate).toLocaleDateString()}</p>
+              <p className="text-xs text-muted-foreground">{req.items.length} items · Due {req.requiredDate ? new Date(req.requiredDate).toLocaleDateString() : '—'}</p>
             </div>
             <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
               {req.status === 'DRAFT' && (
@@ -525,7 +525,7 @@ function RequestsTab({ requests, loading, refetch }: any) {
                     </tr></thead>
                     <tbody>
                       {req.items.map((item: any) => (
-                        <tr key={item.id} className="border-t border-border/40">
+                        <tr key={item.id} className="border-t border-border/40 hover:bg-muted/20 cursor-pointer transition-colors">
                           <td className="py-2 text-foreground">{item.description}</td>
                           <td className="py-2 text-center">{item.quantity}</td>
                           <td className="py-2 text-center text-muted-foreground">{item.unitOfMeasure}</td>

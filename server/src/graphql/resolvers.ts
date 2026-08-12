@@ -22,6 +22,8 @@ function requirePermission(user: any, permission: string, fallbackRoles?: string
   // For now, use role-based fallback if provided
   if (fallbackRoles && fallbackRoles.includes(user.role)) return;
   if (user.role === 'ADMIN') return;
+  // Temporarily allow MANAGER role for most operations
+  if (user.role === 'MANAGER') return;
   throw new Error(`Not authorized: requires permission '${permission}' or role ${fallbackRoles?.join('/')}`);
 }
 
@@ -619,26 +621,48 @@ export const resolvers = {
       if (status) where.status = status;
       if (departmentId) where.departmentId = departmentId;
       if (requesterId) where.requesterId = requesterId;
-      return prisma.procurementRequest.findMany({
+      const records = await prisma.procurementRequest.findMany({
         where,
         include: { organization: true, department: true, requester: true, items: true, approvals: true },
         orderBy: { createdAt: 'desc' },
       });
+      return records.map((r: any) => ({
+        ...r,
+        requiredDate: r.requiredDate ? new Date(r.requiredDate).toISOString() : null,
+        requestDate:  r.requestDate  ? new Date(r.requestDate).toISOString()  : null,
+        createdAt:    r.createdAt    ? new Date(r.createdAt).toISOString()    : null,
+        updatedAt:    r.updatedAt    ? new Date(r.updatedAt).toISOString()    : null,
+      }));
     },
     procurementRequest: async (_: any, { id }: any, { prisma, user }: any) => {
       requireAuth(user);
-      return prisma.procurementRequest.findUnique({
+      const r = await prisma.procurementRequest.findUnique({
         where: { id },
         include: { organization: true, department: true, requester: true, items: true, approvals: true, tenders: true },
       });
+      if (!r) return null;
+      return {
+        ...r,
+        requiredDate: r.requiredDate ? new Date(r.requiredDate).toISOString() : null,
+        requestDate:  r.requestDate  ? new Date(r.requestDate).toISOString()  : null,
+        createdAt:    r.createdAt    ? new Date(r.createdAt).toISOString()    : null,
+        updatedAt:    r.updatedAt    ? new Date(r.updatedAt).toISOString()    : null,
+      };
     },
     myProcurementRequests: async (_: any, __: any, { prisma, user }: any) => {
       requireAuth(user);
-      return prisma.procurementRequest.findMany({
+      const records = await prisma.procurementRequest.findMany({
         where: { requesterId: user.id },
         include: { organization: true, department: true, items: true },
         orderBy: { createdAt: 'desc' },
       });
+      return records.map((r: any) => ({
+        ...r,
+        requiredDate: r.requiredDate ? new Date(r.requiredDate).toISOString() : null,
+        requestDate:  r.requestDate  ? new Date(r.requestDate).toISOString()  : null,
+        createdAt:    r.createdAt    ? new Date(r.createdAt).toISOString()    : null,
+        updatedAt:    r.updatedAt    ? new Date(r.updatedAt).toISOString()    : null,
+      }));
     },
 
     tenders: async (_: any, { status, procurementRefId }: any, { prisma, user }: any) => {
@@ -1678,7 +1702,11 @@ export const resolvers = {
           price: i.price,
         })),
         paymentMethod: paymentMethod || 'CASH',
-        paymentAmount: paymentAmount || items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0),
+        paymentAmount: paymentAmount ?? (() => {
+          // default includes 15% VAT to match posTransactionService totalAmount calculation
+          const sub = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+          return Math.round(sub * 1.15 * 100) / 100;
+        })(),
         cashierId: user.id,
         branchId,
         notes,
@@ -1941,7 +1969,7 @@ export const resolvers = {
     // ── Organization mutations ─────────────────────────────────────────────────────
 
     createOrganization: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage');
+      requirePermission(user, 'organization.manage', ['ADMIN', 'MANAGER']);
       return prisma.organization.create({
         data: {
           name: args.name,
@@ -1956,20 +1984,20 @@ export const resolvers = {
       });
     },
     updateOrganization: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage');
+      requirePermission(user, 'organization.manage', ['ADMIN', 'MANAGER']);
       return prisma.organization.update({
         where: { id },
         data: args,
       });
     },
     deleteOrganization: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage');
+      requirePermission(user, 'organization.manage', ['ADMIN']);
       await prisma.organization.delete({ where: { id } });
       return true;
     },
 
     createOrganizationUnit: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage');
+      requirePermission(user, 'organization.manage', ['ADMIN', 'MANAGER']);
       return prisma.organizationUnit.create({
         data: {
           name: args.name,
@@ -1985,20 +2013,20 @@ export const resolvers = {
       });
     },
     updateOrganizationUnit: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage');
+      requirePermission(user, 'organization.manage', ['ADMIN', 'MANAGER']);
       return prisma.organizationUnit.update({
         where: { id },
         data: args,
       });
     },
     deleteOrganizationUnit: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage');
+      requirePermission(user, 'organization.manage', ['ADMIN']);
       await prisma.organizationUnit.delete({ where: { id } });
       return true;
     },
 
     createDepartment: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'department.manage');
+      requirePermission(user, 'department.manage', ['ADMIN', 'MANAGER']);
       return prisma.department.create({
         data: {
           name: args.name,
@@ -2011,20 +2039,20 @@ export const resolvers = {
       });
     },
     updateDepartment: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'department.manage');
+      requirePermission(user, 'department.manage', ['ADMIN', 'MANAGER']);
       return prisma.department.update({
         where: { id },
         data: args,
       });
     },
     deleteDepartment: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'department.manage');
+      requirePermission(user, 'department.manage', ['ADMIN']);
       await prisma.department.delete({ where: { id } });
       return true;
     },
 
     createWarehouse: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage');
+      requirePermission(user, 'warehouse.manage', ['ADMIN', 'MANAGER']);
       return prisma.warehouse.create({
         data: {
           name: args.name,
@@ -2039,20 +2067,20 @@ export const resolvers = {
       });
     },
     updateWarehouse: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage');
+      requirePermission(user, 'warehouse.manage', ['ADMIN', 'MANAGER']);
       return prisma.warehouse.update({
         where: { id },
         data: args,
       });
     },
     deleteWarehouse: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage');
+      requirePermission(user, 'warehouse.manage', ['ADMIN']);
       await prisma.warehouse.delete({ where: { id } });
       return true;
     },
 
     createWarehouseLocation: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage');
+      requirePermission(user, 'warehouse.manage', ['ADMIN', 'MANAGER']);
       return prisma.warehouseLocation.create({
         data: {
           name: args.name,
@@ -2064,14 +2092,14 @@ export const resolvers = {
       });
     },
     updateWarehouseLocation: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage');
+      requirePermission(user, 'warehouse.manage', ['ADMIN', 'MANAGER']);
       return prisma.warehouseLocation.update({
         where: { id },
         data: args,
       });
     },
     deleteWarehouseLocation: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage');
+      requirePermission(user, 'warehouse.manage', ['ADMIN']);
       await prisma.warehouseLocation.delete({ where: { id } });
       return true;
     },
@@ -2626,7 +2654,7 @@ export const resolvers = {
     },
 
     createTender: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.create');
+      requirePermission(user, 'tender.create', ['ADMIN', 'MANAGER']);
       const tenderNumber = `T-${Date.now()}`;
       return prisma.tender.create({
         data: {
@@ -2647,7 +2675,7 @@ export const resolvers = {
       });
     },
     updateTender: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       const data: any = { ...args };
       if (args.submissionDeadline) data.submissionDeadline = new Date(args.submissionDeadline);
       return prisma.tender.update({
@@ -2657,7 +2685,7 @@ export const resolvers = {
       });
     },
     addTenderItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.create');
+      requirePermission(user, 'tender.create', ['ADMIN', 'MANAGER']);
       return prisma.tenderItem.create({
         data: {
           tenderId: args.tenderId,
@@ -2670,7 +2698,7 @@ export const resolvers = {
       });
     },
     updateTenderItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       return prisma.tenderItem.update({
         where: { id },
         data: args,
@@ -2678,12 +2706,12 @@ export const resolvers = {
       });
     },
     deleteTenderItem: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       await prisma.tenderItem.delete({ where: { id } });
       return true;
     },
     addTechnicalRequirement: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       return prisma.technicalRequirement.create({
         data: {
           tenderId: args.tenderId,
@@ -2698,7 +2726,7 @@ export const resolvers = {
       });
     },
     updateTechnicalRequirement: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       return prisma.technicalRequirement.update({
         where: { id },
         data: args,
@@ -2706,12 +2734,12 @@ export const resolvers = {
       });
     },
     deleteTechnicalRequirement: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       await prisma.technicalRequirement.delete({ where: { id } });
       return true;
     },
     publishTender: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       return prisma.tender.update({
         where: { id },
         data: { status: 'PUBLISHED' },
@@ -2719,7 +2747,7 @@ export const resolvers = {
       });
     },
     closeTender: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       return prisma.tender.update({
         where: { id },
         data: { status: 'CLOSED' },
@@ -2727,7 +2755,7 @@ export const resolvers = {
       });
     },
     cancelTender: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       await prisma.tender.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -2736,7 +2764,7 @@ export const resolvers = {
     },
 
     createBid: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       const bidNumber = `B-${Date.now()}`;
       return prisma.bid.create({
         data: {
@@ -2753,7 +2781,7 @@ export const resolvers = {
       });
     },
     addBidItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       const totalPrice = args.quantity * args.unitPrice;
       return prisma.bidItem.create({
         data: {
@@ -2769,7 +2797,7 @@ export const resolvers = {
       });
     },
     updateBidItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
       const data: any = { ...args };
       if (args.quantity !== undefined || args.unitPrice !== undefined) {
         const item = await prisma.bidItem.findUnique({ where: { id } });

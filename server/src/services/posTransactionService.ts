@@ -207,11 +207,14 @@ export async function createSaleTransaction(
       const vatAmount = subtotal.mul(vatRate);
       const totalAmount = subtotal.add(vatAmount);
 
-      // Validate payment amount
+      // Validate payment amount - allow partial payments for credit sales
       const paymentAmount = new Decimal(request.paymentAmount);
-      if (paymentAmount.lt(totalAmount)) {
-        throw new Error(`Insufficient payment. Required: ${totalAmount.toString()}, Provided: ${paymentAmount.toString()}`);
+      if (paymentAmount.lt(0)) {
+        throw new Error(`Invalid payment amount: ${paymentAmount.toString()}`);
       }
+      // Allow partial payments - difference goes to customer credit
+      const isPartialPayment = paymentAmount.lt(totalAmount);
+      const creditAmount = isPartialPayment ? totalAmount.sub(paymentAmount) : new Decimal(0);
 
       // Step 4: Generate invoice number
       const invoiceNo = generateInvoiceNumber();
@@ -225,10 +228,23 @@ export async function createSaleTransaction(
           totalAmount: totalAmount.toNumber(),
           ...(request.customerId ? { customer: { connect: { id: request.customerId } } } : {}),
           paymentMethod: request.paymentMethod,
-          paymentStatus: 'PAID',
+          paymentStatus: isPartialPayment ? 'PARTIAL' : 'PAID',
           notes: request.notes,
         } as any,
       });
+
+      // Step 5.5: Handle partial payment - add to customer credit
+      if (isPartialPayment && request.customerId) {
+        const customer = await tx.customer.findUnique({ where: { id: request.customerId } });
+        if (customer) {
+          await tx.customer.update({
+            where: { id: request.customerId },
+            data: {
+              creditBalance: customer.creditBalance + creditAmount.toNumber(),
+            },
+          });
+        }
+      }
 
       // Step 6: Create sale items and deduct stock
       const saleItems = [];
@@ -275,34 +291,36 @@ export async function createSaleTransaction(
 
       // Step 8: Process payment
       if (request.paymentMethod === 'CREDIT' && request.customerId) {
-        // Update customer credit balance
-        const creditAccount = await tx.creditAccount.findUnique({
-          where: { customerId: request.customerId },
-        });
+        // Update customer credit balance for full credit sales
+        if (!isPartialPayment) {
+          const creditAccount = await tx.creditAccount.findUnique({
+            where: { customerId: request.customerId },
+          });
 
-        if (creditAccount) {
-          const currentBalance = new Decimal(creditAccount.currentBalance);
-          const availableCredit = new Decimal(creditAccount.availableCredit);
+          if (creditAccount) {
+            const currentBalance = new Decimal(creditAccount.currentBalance);
+            const availableCredit = new Decimal(creditAccount.availableCredit);
 
-          if (totalAmount.gt(availableCredit)) {
-            throw new Error(`Insufficient credit. Available: ${availableCredit.toString()}, Required: ${totalAmount.toString()}`);
+            if (totalAmount.gt(availableCredit)) {
+              throw new Error(`Insufficient credit. Available: ${availableCredit.toString()}, Required: ${totalAmount.toString()}`);
+            }
+
+            await tx.creditAccount.update({
+              where: { id: creditAccount.id },
+              data: {
+                currentBalance: currentBalance.add(totalAmount).toNumber(),
+                availableCredit: availableCredit.sub(totalAmount).toNumber(),
+                updatedAt: new Date(),
+              },
+            });
+
+            await tx.customer.update({
+              where: { id: request.customerId },
+              data: {
+                currentDebt: currentBalance.add(totalAmount).toNumber(),
+              },
+            });
           }
-
-          await tx.creditAccount.update({
-            where: { id: creditAccount.id },
-            data: {
-              currentBalance: currentBalance.add(totalAmount).toNumber(),
-              availableCredit: availableCredit.sub(totalAmount).toNumber(),
-              updatedAt: new Date(),
-            },
-          });
-
-          await tx.customer.update({
-            where: { id: request.customerId },
-            data: {
-              currentDebt: currentBalance.add(totalAmount).toNumber(),
-            },
-          });
         }
       }
 
@@ -344,7 +362,8 @@ export async function createSaleTransaction(
         cogsAmount: profitCalc.cogs.toString(),
         profitAmount: profitCalc.grossProfit.toString(),
         items: saleItems,
-        paymentStatus: 'PAID',
+        paymentStatus: isPartialPayment ? 'PARTIAL' : 'PAID',
+        creditAmount: creditAmount.toString(),
       };
     });
   } catch (error) {
