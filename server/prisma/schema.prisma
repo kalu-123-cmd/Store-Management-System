@@ -645,6 +645,9 @@ model ProcurementRequest {
   justification  String?
   estimatedTotal Float
   status         String        @default("DRAFT") // DRAFT, SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, PROCUREMENT_IN_PROGRESS, COMPLETED, CANCELLED
+  approvedBy     String?
+  approvedAt     DateTime?
+  approvalNotes  String?
   notes          String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt

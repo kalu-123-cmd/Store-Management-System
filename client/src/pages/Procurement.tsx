@@ -162,7 +162,7 @@ function Modal({ open, onClose, title, subtitle, children }: any) {
               <h2 className="text-lg font-semibold text-foreground">{title}</h2>
               {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
             </div>
-            <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
               <X size={20} />
             </button>
           </div>
@@ -230,7 +230,7 @@ function NewRequestModal({ open, onClose, refetch }: any) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className={lbl + ' mb-0'}>Items *</label>
-          <button onClick={addLine} className="text-xs text-primary hover:underline flex items-center gap-1">
+          <button onClick={addLine} className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer">
             <Plus size={13} /> Add item
           </button>
         </div>
@@ -247,7 +247,7 @@ function NewRequestModal({ open, onClose, refetch }: any) {
                 onChange={e => updateLine(i, 'estimatedUnitCost', e.target.value)}
                 placeholder="Unit cost" className={ic + ' col-span-3'} />
               <button onClick={() => removeLine(i)} disabled={lines.length === 1}
-                className="col-span-1 text-muted-foreground hover:text-destructive disabled:opacity-30">
+                className="col-span-1 text-muted-foreground hover:text-destructive disabled:opacity-30 cursor-pointer">
                 <Trash2 size={14} />
               </button>
             </div>
@@ -259,9 +259,9 @@ function NewRequestModal({ open, onClose, refetch }: any) {
       </div>
 
       <div className="flex gap-3 pt-2">
-        <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors">Cancel</button>
+        <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors cursor-pointer">Cancel</button>
         <button onClick={handleSubmit} disabled={loading}
-          className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2 transition-colors">
+          className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2 transition-colors cursor-pointer">
           {loading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
           Create Request
         </button>
@@ -354,9 +354,9 @@ function NewTenderModal({ open, onClose, refetch }: any) {
         </div>
       </div>
       <div className="flex gap-3 pt-2">
-        <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors">Cancel</button>
+        <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors cursor-pointer">Cancel</button>
         <button onClick={handleSubmit} disabled={loading}
-          className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2">
+          className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer">
           {loading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
           Create Tender
         </button>
@@ -429,9 +429,9 @@ function NewContractModal({ open, onClose, refetch, suppliers }: any) {
         </div>
       </div>
       <div className="flex gap-3 pt-2">
-        <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors">Cancel</button>
+        <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors cursor-pointer">Cancel</button>
         <button onClick={handleSubmit} disabled={loading}
-          className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2">
+          className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer">
           {loading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
           Create Contract
         </button>
@@ -491,15 +491,15 @@ function RequestsTab({ requests, loading, refetch }: any) {
               <p className="text-sm font-semibold text-foreground">{fmt(req.estimatedTotal)}</p>
               <p className="text-xs text-muted-foreground">{req.items.length} items · Due {req.requiredDate ? new Date(req.requiredDate).toLocaleDateString() : '—'}</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 shrink-0">
               {req.status === 'DRAFT' && (
-                <button onClick={() => handleSubmit(req.id, req.requestNumber)}
+                <button onClick={(e) => { e.stopPropagation(); handleSubmit(req.id, req.requestNumber); }}
                   className="px-3 py-1.5 bg-sky-500 text-white rounded-lg text-xs font-medium hover:bg-sky-600 transition-colors flex items-center gap-1.5" title="Submit for review">
                   <Send size={12} /> Submit
                 </button>
               )}
               {req.status === 'SUBMITTED' && (
-                <button onClick={() => handleApprove(req.id, req.requestNumber)}
+                <button onClick={(e) => { e.stopPropagation(); handleApprove(req.id, req.requestNumber); }}
                   className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors flex items-center gap-1.5" title="Approve">
                   <CheckCircle2 size={12} /> Approve
                 </button>
@@ -601,9 +601,14 @@ function TendersTab({ tenders, loading, refetch }: any) {
                 <td className="px-4 py-3">
                   {t.status === 'DRAFT' && (
                     <button onClick={() => handlePublish(t.id, t.tenderNumber)}
-                      className="p-1.5 text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 rounded-lg transition-colors" title="Publish">
-                      <Send size={14} />
+                      className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors flex items-center gap-1.5" title="Publish">
+                      <Send size={12} /> Publish
                     </button>
+                  )}
+                  {t.status === 'PUBLISHED' && (
+                    <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium flex items-center gap-1.5">
+                      <CheckCircle2 size={12} /> Published
+                    </span>
                   )}
                 </td>
               </tr>
@@ -663,9 +668,14 @@ function ContractsTab({ contracts, loading, refetch }: any) {
                 <td className="px-4 py-3">
                   {c.status === 'DRAFT' && (
                     <button onClick={() => handleActivate(c.id, c.contractNumber)}
-                      className="p-1.5 text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 rounded-lg transition-colors" title="Activate">
-                      <CheckCircle2 size={14} />
+                      className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors flex items-center gap-1.5" title="Activate">
+                      <CheckCircle2 size={12} /> Activate
                     </button>
+                  )}
+                  {c.status === 'ACTIVE' && (
+                    <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium flex items-center gap-1.5">
+                      <CheckCircle2 size={12} /> Active
+                    </span>
                   )}
                 </td>
               </tr>
@@ -734,7 +744,7 @@ export default function Procurement() {
         </div>
         <button
           onClick={handleNew}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors shadow-sm"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors shadow-sm cursor-pointer"
         >
           <Plus size={16} /> {newLabels[activeTab]}
         </button>
@@ -762,7 +772,7 @@ export default function Procurement() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
                 activeTab === tab.key
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
