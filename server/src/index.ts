@@ -16,13 +16,13 @@ import { createDataLoaders } from './dataloaders';
 
 dotenv.config();
 
-// Production on Render: always use SQLite on the persistent disk.
-// Overrides stale/expired Postgres DATABASE_URL values from the dashboard.
-if (process.env.RENDER === 'true' || fs.existsSync('/data')) {
-  if (!fs.existsSync('/data')) {
-    try { fs.mkdirSync('/data', { recursive: true }); } catch { /* ignore */ }
-  }
-  process.env.DATABASE_URL = 'file:/data/prod.db';
+// Always prefer SQLite for this app. Ignores expired/unreachable Render Postgres URLs.
+const postgresUrl = process.env.DATABASE_URL && /postgres|dpg-/i.test(process.env.DATABASE_URL);
+const onRender = process.env.RENDER === 'true' || fs.existsSync('/data');
+if (onRender || postgresUrl) {
+  const diskDir = onRender ? '/data' : path.join(__dirname, '../prisma/data');
+  try { fs.mkdirSync(diskDir, { recursive: true }); } catch { /* ignore */ }
+  process.env.DATABASE_URL = onRender ? 'file:/data/prod.db' : `file:${path.join(diskDir, 'prod.db').replace(/\\/g, '/')}`;
   console.log('[db] Using SQLite at', process.env.DATABASE_URL);
 }
 

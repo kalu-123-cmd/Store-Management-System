@@ -1,7 +1,5 @@
 /**
- * Production bootstrap for Render.
- * Forces SQLite on /data, migrates schema, then starts the API.
- * Seed + empty-DB handling also runs inside dist/index.js.
+ * Production bootstrap — always SQLite (ignores dead Postgres URLs).
  */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
@@ -16,14 +14,16 @@ function run(cmd, args) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
-if (process.env.RENDER === 'true' || fs.existsSync('/data')) {
+const onRender = process.env.RENDER === 'true' || fs.existsSync('/data');
+if (onRender) {
   try { fs.mkdirSync('/data', { recursive: true }); } catch { /* ignore */ }
   process.env.DATABASE_URL = 'file:/data/prod.db';
-  console.log('[boot] SQLite disk database:', process.env.DATABASE_URL);
-} else if (process.env.DATABASE_URL && /postgres/i.test(process.env.DATABASE_URL)) {
-  console.warn('[boot] Ignoring PostgreSQL URL — this app ships with SQLite.');
-  process.env.DATABASE_URL = 'file:./prod.db';
+} else if (!process.env.DATABASE_URL || /postgres|dpg-/i.test(process.env.DATABASE_URL || '')) {
+  const diskDir = path.join(__dirname, '../prisma/data');
+  try { fs.mkdirSync(diskDir, { recursive: true }); } catch { /* ignore */ }
+  process.env.DATABASE_URL = 'file:' + path.join(diskDir, 'prod.db').replace(/\\/g, '/');
 }
+console.log('[boot] DATABASE_URL=', process.env.DATABASE_URL);
 
 run('npx', ['prisma', 'generate']);
 run('npx', ['prisma', 'db', 'push', '--accept-data-loss', '--skip-generate']);
