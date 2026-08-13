@@ -1548,7 +1548,16 @@ export const resolvers = {
     },
 
     login: async (_: any, { email, password }: any, { prisma }: any) => {
-      const user = await prisma.user.findUnique({ where: { email } });
+      const raw = String(email || '').trim();
+      const aliases: Record<string, string> = {
+        'admin@storemanagement.com': 'admin@store.com',
+        'manager@storemanagement.com': 'manager@store.com',
+        'cashier@storemanagement.com': 'cashier@store.com',
+      };
+      const lookup = aliases[raw.toLowerCase()] || raw;
+      const user =
+        (await prisma.user.findUnique({ where: { email: lookup } })) ||
+        (await prisma.user.findUnique({ where: { email: raw } }));
       if (!user) throw new Error('Invalid credentials');
       const valid = await bcrypt.compare(password, user.password);
       if (!valid) throw new Error('Invalid credentials');

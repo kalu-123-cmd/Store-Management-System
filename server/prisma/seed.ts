@@ -12,16 +12,28 @@ async function main() {
   const cashierPw = await bcrypt.hash('cashier123', 10);
 
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@store.com' }, update: {},
+    where: { email: 'admin@store.com' }, update: { password: adminPw, role: 'ADMIN' },
     create: { name: 'Admin User',    email: 'admin@store.com',   password: adminPw,   role: 'ADMIN'   },
   });
   await prisma.user.upsert({
-    where: { email: 'manager@store.com' }, update: {},
+    where: { email: 'manager@store.com' }, update: { password: managerPw, role: 'MANAGER' },
     create: { name: 'Store Manager', email: 'manager@store.com', password: managerPw, role: 'MANAGER' },
   });
   await prisma.user.upsert({
-    where: { email: 'cashier@store.com' }, update: {},
+    where: { email: 'cashier@store.com' }, update: { password: cashierPw, role: 'CASHIER' },
     create: { name: 'Cashier One',   email: 'cashier@store.com', password: cashierPw, role: 'CASHIER' },
+  });
+  await prisma.user.upsert({
+    where: { email: 'admin@storemanagement.com' }, update: { password: adminPw, role: 'ADMIN' },
+    create: { name: 'Admin User', email: 'admin@storemanagement.com', password: adminPw, role: 'ADMIN' },
+  });
+  await prisma.user.upsert({
+    where: { email: 'manager@storemanagement.com' }, update: { password: managerPw, role: 'MANAGER' },
+    create: { name: 'Store Manager', email: 'manager@storemanagement.com', password: managerPw, role: 'MANAGER' },
+  });
+  await prisma.user.upsert({
+    where: { email: 'cashier@storemanagement.com' }, update: { password: cashierPw, role: 'CASHIER' },
+    create: { name: 'Cashier One', email: 'cashier@storemanagement.com', password: cashierPw, role: 'CASHIER' },
   });
 
   // ── Categories ─────────────────────────────────────────────────────────────
