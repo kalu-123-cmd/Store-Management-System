@@ -3,7 +3,7 @@ import { useQuery, useMutation, gql } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, X, Trash2, CheckCircle2, Send, Package,
-  ChevronDown, ChevronUp, Truck, FileDown,
+  ChevronDown, ChevronUp, Truck, FileDown, Upload,
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
@@ -45,6 +45,25 @@ const RECEIVE_PO = gql`
 
 const DELETE_PO = gql`
   mutation DeletePO($id: ID!) { deletePurchaseOrder(id: $id) }
+`;
+
+const IMPORT_PO_CSV = gql`
+  mutation ImportPOCSV($csvContent: String!) {
+    importPurchaseOrdersCSV(csvContent: $csvContent) {
+      success
+      summary {
+        totalProcessed
+        created
+        updated
+        failed
+      }
+      errors {
+        rowNumber
+        sku
+        error
+      }
+    }
+  }
 `;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -400,10 +419,136 @@ function PORow({ order, refetch, canMutate, canAdminDelete }: any) {
   );
 }
 
+// ── CSV Import Modal ───────────────────────────────────────────────────────────
+
+function ImportCSVModal({ open, onClose, refetch }: any) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<any[]>([]);
+  const [importing, setImporting] = useState(false);
+  const { success, error: toastError } = useToast();
+  const [importPOCSV] = useMutation(IMPORT_PO_CSV);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (selected && selected.type === 'text/csv') {
+      setFile(selected);
+      // Simple preview
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result as string;
+        const lines = text.split('\n').slice(0, 6); // Preview first 5 rows
+        const headers = lines[0]?.split(',') || [];
+        const data = lines.slice(1).filter(l => l.trim()).map(line => {
+          const values = line.split(',');
+          const row: any = {};
+          headers.forEach((h, i) => row[h.trim()] = values[i]?.trim());
+          return row;
+        });
+        setPreview(data);
+      };
+      reader.readAsText(selected);
+    } else {
+      toastError('Invalid file', 'Please select a CSV file');
+    }
+  };
+
+  const handleImport = async () => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const csvContent = ev.target?.result as string;
+        const result = await importPOCSV({ variables: { csvContent } });
+        if (result.data.importPOCSV.success) {
+          success('Import successful', `${result.data.importPOCSV.summary.created} purchase orders imported`);
+          refetch();
+          onClose();
+          setFile(null);
+          setPreview([]);
+        } else {
+          toastError('Import failed', result.data.importPOCSV.errors[0]?.error || 'Unknown error');
+        }
+        setImporting(false);
+      };
+      reader.readAsText(file);
+    } catch (e: any) {
+      toastError('Import error', e.message);
+      setImporting(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <motion.div initial={{ scale:0.95, opacity:0 }} animate={{ scale:1, opacity:1 }} exit={{ scale:0.95, opacity:0 }}
+          className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card z-10">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Import Purchase Orders CSV</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Import purchase orders from a CSV file</p>
+            </div>
+            <button onClick={onClose}><X size={20} className="text-muted-foreground" /></button>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary/50 transition-colors">
+              <input type="file" accept=".csv" onChange={handleFileSelect} className="hidden" id="csv-upload" />
+              <label htmlFor="csv-upload" className="cursor-pointer">
+                <Upload size={32} className="mx-auto text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-foreground">Click to upload CSV file</p>
+                <p className="text-xs text-muted-foreground mt-1">Format: PO Number, Supplier, Status, Items, Total Cost, Created By, Date</p>
+              </label>
+            </div>
+            {preview.length > 0 && (
+              <div className="border border-border rounded-xl overflow-hidden">
+                <div className="bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground uppercase">
+                  Preview (first 5 rows)
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        {Object.keys(preview[0]).map(key => (
+                          <th key={key} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{key}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.map((row, i) => (
+                        <tr key={i} className="border-b border-border/50">
+                          {Object.values(row).map((val: any, j) => (
+                            <td key={j} className="px-3 py-2 text-xs">{val}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={handleImport} disabled={!file || importing}
+                className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2 transition-colors">
+                {importing ? <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" /> : <Upload size={15} />}
+                {importing ? 'Importing...' : 'Import CSV'}
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PurchaseOrders() {
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const { data, loading, refetch } = useQuery(GET_PO_DATA, { fetchPolicy: 'cache-and-network' });
   const { success } = useToast();
   const { canMutate, canAdminDelete } = useRole();
@@ -435,6 +580,12 @@ export default function PurchaseOrders() {
             className="px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted flex items-center gap-2 transition-colors">
             <FileDown size={14} /> Export CSV
           </button>
+          {canMutate && (
+            <button onClick={() => setImportOpen(true)}
+              className="px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted flex items-center gap-2 transition-colors">
+              <Upload size={14} /> Import CSV
+            </button>
+          )}
           {canMutate && (
             <button onClick={() => setCreateOpen(true)}
               className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors shadow-sm">
@@ -511,6 +662,7 @@ export default function PurchaseOrders() {
       </div>
 
       <CreatePOModal open={createOpen} onClose={() => setCreateOpen(false)} products={products} suppliers={suppliers} refetch={refetch} />
+      <ImportCSVModal open={importOpen} onClose={() => setImportOpen(false)} refetch={refetch} />
     </div>
   );
 }

@@ -204,16 +204,35 @@ export const resolvers = {
         requireAuth(user);
         const now = new Date();
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfYesterday = new Date(startOfDay.getTime() - 24 * 60 * 60 * 1000);
+        const startOfWeek = new Date(startOfDay.getTime() - 6 * 24 * 60 * 60 * 1000);
+        const startOfLastWeek = new Date(startOfWeek.getTime() - 7 * 24 * 60 * 60 * 1000);
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
-        const [products, categories, suppliers, customers, todaySalesAgg, monthlySales, expiringBatches, pendingPurchaseOrders, receivables, payables] = await Promise.all([
+        const [
+          products, categories, suppliers, customers,
+          todaySalesAgg, yesterdaySalesAgg, weekSalesAgg, lastWeekSalesAgg,
+          monthlySales, lastMonthSalesAgg, expiringBatches, pendingPurchaseOrders, receivables, payables,
+        ] = await Promise.all([
           prisma.product.findMany(),
           prisma.category.count(),
           prisma.supplier.count(),
           prisma.customer.count(),
           prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfDay } } }),
+          prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfYesterday, lt: startOfDay } } }),
+          prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfWeek } } }),
+          prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfLastWeek, lt: startOfWeek } } }),
           prisma.sale.findMany({ where: { createdAt: { gte: startOfMonth } }, include: { items: { include: { product: true } } } }),
-          prisma.itemBatch.findMany({ where: { expiryDate: { lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) } } }),
+          prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfLastMonth, lte: endOfLastMonth } } }),
+          prisma.itemBatch.findMany({
+            where: {
+              expiryDate: { lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) },
+              status: 'ACTIVE',
+              currentQuantity: { gt: 0 },
+            },
+          }),
           prisma.purchaseOrder.findMany({ where: { status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SENT'] } } }),
           prisma.creditAccount.findMany({ where: { currentBalance: { gt: 0 } } }),
           prisma.creditAccount.findMany({ where: { currentBalance: { lt: 0 } } }),
@@ -239,8 +258,12 @@ export const resolvers = {
           totalCustomers: customers,
           inventoryValue,
           todaySales: todaySalesAgg._sum.totalAmount || 0,
+          yesterdaySales: yesterdaySalesAgg._sum.totalAmount || 0,
+          weekSales: weekSalesAgg._sum.totalAmount || 0,
+          lastWeekSales: lastWeekSalesAgg._sum.totalAmount || 0,
           monthlyRevenue,
           monthlyProfit,
+          lastMonthRevenue: lastMonthSalesAgg._sum.totalAmount || 0,
           lowStockCount,
           outOfStockCount,
           totalStock,
@@ -258,8 +281,12 @@ export const resolvers = {
           totalCustomers: 0,
           inventoryValue: 0,
           todaySales: 0,
+          yesterdaySales: 0,
+          weekSales: 0,
+          lastWeekSales: 0,
           monthlyRevenue: 0,
           monthlyProfit: 0,
+          lastMonthRevenue: 0,
           lowStockCount: 0,
           outOfStockCount: 0,
           totalStock: 0,
@@ -275,16 +302,15 @@ export const resolvers = {
       try {
         requireAuth(user);
         const products = await prisma.product.findMany({
-          include: { category: true },
+          include: { category: true, supplier: true },
+          orderBy: { stock: 'asc' },
         });
         return products
           .filter((p: any) => p.stock <= p.minStockLevel)
           .map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            stock: p.stock,
-            minStockLevel: p.minStockLevel,
-            categoryName: p.category?.name || 'Uncategorized',
+            ...p,
+            createdAt: p.createdAt?.toISOString?.() ?? p.createdAt,
+            updatedAt: p.updatedAt?.toISOString?.() ?? p.updatedAt,
           }));
       } catch (error) {
         console.error('Low stock products error:', error);
@@ -591,7 +617,7 @@ export const resolvers = {
       requireAuth(user);
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + days);
-      return prisma.itemBatch.findMany({
+      const batches = await prisma.itemBatch.findMany({
         where: {
           expiryDate: { lte: expiryDate },
           status: 'ACTIVE',
@@ -600,6 +626,20 @@ export const resolvers = {
         include: { product: true, warehouse: true },
         orderBy: { expiryDate: 'asc' },
       });
+      return batches.map((b: any) => ({
+        ...b,
+        manufacturingDate: b.manufacturingDate?.toISOString?.() ?? b.manufacturingDate,
+        expiryDate: b.expiryDate?.toISOString?.() ?? b.expiryDate,
+        createdAt: b.createdAt?.toISOString?.() ?? b.createdAt,
+        updatedAt: b.updatedAt?.toISOString?.() ?? b.updatedAt,
+        product: b.product
+          ? {
+              ...b.product,
+              createdAt: b.product.createdAt?.toISOString?.() ?? b.product.createdAt,
+              updatedAt: b.product.updatedAt?.toISOString?.() ?? b.product.updatedAt,
+            }
+          : null,
+      }));
     },
     lowStockBatches: async (_: any, { threshold = 10 }: any, { prisma, user }: any) => {
       requireAuth(user);
@@ -2481,6 +2521,16 @@ export const resolvers = {
       requirePermission(user, 'procurement:create', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
       const data: any = { ...args };
       if (args.requiredDate) data.requiredDate = new Date(args.requiredDate);
+      if (args.status) {
+        data.status = args.status;
+        if (args.status === 'SUBMITTED') {
+          data.submittedAt = new Date();
+        }
+        if (args.status === 'APPROVED') {
+          data.approvedBy = user.id;
+          data.approvedAt = new Date();
+        }
+      }
       return prisma.procurementRequest.update({
         where: { id },
         data,
@@ -2635,6 +2685,92 @@ export const resolvers = {
       }
       
       return result;
+    },
+
+    importPurchaseOrdersCSV: async (_: any, { csvContent }: any, { prisma, user }: any) => {
+      requirePermission(user, 'purchase:create', ['ADMIN', 'MANAGER']);
+      
+      try {
+        const rows = csvContent.split('\n').filter(line => line.trim());
+        if (rows.length < 2) {
+          throw new Error('CSV file is empty or has no data rows');
+        }
+
+        const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
+        const data = rows.slice(1).map(row => {
+          const values = row.split(',').map(v => v.trim());
+          const obj: any = {};
+          headers.forEach((h, i) => obj[h] = values[i]);
+          return obj;
+        });
+
+        let imported = 0;
+        let failed = 0;
+        const errors: any[] = [];
+
+        for (const row of data) {
+          try {
+            // Find or create supplier
+            let supplier = await prisma.supplier.findFirst({
+              where: { name: row.supplier }
+            });
+
+            if (!supplier && row.supplier) {
+              supplier = await prisma.supplier.create({
+                data: { name: row.supplier }
+              });
+            }
+
+            // Generate PO number if not provided
+            const poNumber = row['po number'] || `PO-${Date.now()}`;
+
+            // Create purchase order
+            await prisma.purchaseOrder.create({
+              data: {
+                poNumber,
+                supplierId: supplier?.id || null,
+                status: row.status || 'DRAFT',
+                notes: row.notes || null,
+                userId: user.id,
+                totalCost: parseFloat(row['total cost']) || 0,
+              }
+            });
+
+            imported++;
+          } catch (e: any) {
+            failed++;
+            errors.push({ row: row['po number'] || 'unknown', error: e.message });
+          }
+        }
+
+        return {
+          success: true,
+          summary: {
+            totalProcessed: imported + failed,
+            created: imported,
+            updated: 0,
+            skipped: 0,
+            failed: failed,
+            stockChanges: 0
+          },
+          errors: errors.map(e => ({ rowNumber: 0, sku: e.row, error: e.error })),
+          importId: null
+        };
+      } catch (e: any) {
+        return {
+          success: false,
+          summary: {
+            totalProcessed: 0,
+            created: 0,
+            updated: 0,
+            skipped: 0,
+            failed: 0,
+            stockChanges: 0
+          },
+          errors: [{ rowNumber: 0, sku: 'SYSTEM', error: e.message }],
+          importId: null
+        };
+      }
     },
 
     rejectProcurementRequest: async (_: any, { id, comments }: any, { prisma, user }: any) => {
@@ -2923,10 +3059,11 @@ export const resolvers = {
           startDate: new Date(args.startDate),
           endDate: new Date(args.endDate),
           contractValue: args.contractValue,
-          currency: 'ETB',
+          currency: args.currency || 'ETB',
           paymentTerms: args.paymentTerms || null,
           deliveryTerms: args.deliveryTerms || null,
           description: args.description || null,
+          status: args.status || 'DRAFT',
         },
         include: { tender: true, bid: true, supplier: true },
       });

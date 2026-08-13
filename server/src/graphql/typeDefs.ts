@@ -150,8 +150,12 @@ export const typeDefs = `#graphql
     totalCustomers: Int!
     inventoryValue: Float!
     todaySales: Float!
+    yesterdaySales: Float!
+    weekSales: Float!
+    lastWeekSales: Float!
     monthlyRevenue: Float!
     monthlyProfit: Float!
+    lastMonthRevenue: Float!
     lowStockCount: Int!
     outOfStockCount: Int!
     totalStock: Int!
@@ -1484,7 +1488,7 @@ export const typeDefs = `#graphql
 
     # Procurement mutations (Phase 4 & 5)
     createProcurementRequest(departmentId: String, organizationId: String, items: [ProcurementRequestItemInput!], justification: String, urgency: String, requiredBy: String): ProcurementRequest!
-    updateProcurementRequest(id: ID!, requiredDate: String, priority: String, justification: String, notes: String): ProcurementRequest!
+    updateProcurementRequest(id: ID!, requiredDate: String, priority: String, justification: String, notes: String, status: String): ProcurementRequest!
     addProcurementRequestItem(procurementRequestId: String!, description: String!, quantity: Int!, unitOfMeasure: String!, estimatedUnitCost: Float!, technicalSpecs: String, category: String, notes: String): ProcurementRequestItem!
     updateProcurementRequestItem(id: ID!, quantity: Int, estimatedUnitCost: Float, technicalSpecs: String, notes: String): ProcurementRequestItem!
     deleteProcurementRequestItem(id: ID!): Boolean!
@@ -1498,6 +1502,7 @@ export const typeDefs = `#graphql
     # CSV Import mutations
     previewProductImport(csvContent: String!): ImportPreview!
     importProducts(csvContent: String!): ImportResult!
+    importPurchaseOrdersCSV(csvContent: String!): ImportResult!
 
     createTender(procurementRefId: String, projectName: String!, procurementCategory: String!, procurementMethod: String!, marketType: String!, submissionDeadline: String!, bidValidityPeriod: Int!, bidSecurity: Float, currency: String, contractType: String!, description: String): Tender!
     updateTender(id: ID!, submissionDeadline: String, bidSecurity: Float, description: String, status: String): Tender!
@@ -1524,7 +1529,7 @@ export const typeDefs = `#graphql
     evaluateFinancial(bidId: String!, deliveryCost: Float, taxes: Float, priceScore: Float, comments: String): FinancialEvaluation!
     selectBid(id: ID!): Bid!
 
-    createContract(tenderId: String, bidId: String, supplierId: String!, startDate: String!, endDate: String!, contractValue: Float!, currency: String, paymentTerms: String, deliveryTerms: String, description: String): Contract!
+    createContract(tenderId: String, bidId: String, supplierId: String!, startDate: String!, endDate: String!, contractValue: Float!, currency: String, paymentTerms: String, deliveryTerms: String, description: String, status: String): Contract!
     updateContract(id: ID!, endDate: String, paymentTerms: String, deliveryTerms: String, description: String, status: String): Contract!
     addContractItem(contractId: String!, description: String!, quantity: Int!, unit: String!, unitPrice: Float!): ContractItem!
     updateContractItem(id: ID!, quantity: Int, unitPrice: Float): ContractItem!

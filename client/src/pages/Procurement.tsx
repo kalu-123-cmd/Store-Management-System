@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, X, FileDown, RefreshCw, ChevronDown, ChevronUp,
   ClipboardList, FileText, Handshake, AlertTriangle, CheckCircle2,
-  Clock, Send, Trash2,
+  Clock, Send, Trash2, Calendar,
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { fmt } from '../lib/currency';
@@ -55,8 +55,20 @@ const SUBMIT_REQUEST = gql`
 `;
 
 const APPROVE_REQUEST = gql`
-  mutation ApproveRequest($id: ID!) {
-    approveProcurementRequest(id: $id) { id status }
+  mutation ApproveRequest($id: ID!, $comments: String) {
+    approveProcurementRequest(id: $id, comments: $comments) { id status }
+  }
+`;
+
+const UPDATE_REQUEST_STATUS = gql`
+  mutation UpdateRequestStatus($id: ID!, $status: String!) {
+    updateProcurementRequest(id: $id, status: $status) { id status }
+  }
+`;
+
+const UPDATE_REQUEST_PRIORITY = gql`
+  mutation UpdateRequestPriority($id: ID!, $priority: String!) {
+    updateProcurementRequest(id: $id, priority: $priority) { id priority }
   }
 `;
 
@@ -86,19 +98,25 @@ const CREATE_CONTRACT = gql`
   mutation CreateContract(
     $supplierId: String! $startDate: String! $endDate: String!
     $contractValue: Float! $currency: String $paymentTerms: String
-    $deliveryTerms: String $description: String
+    $deliveryTerms: String $description: String $status: String
   ) {
     createContract(
       supplierId: $supplierId startDate: $startDate endDate: $endDate
       contractValue: $contractValue currency: $currency
       paymentTerms: $paymentTerms deliveryTerms: $deliveryTerms
-      description: $description
+      description: $description status: $status
     ) { id contractNumber status }
   }
 `;
 
 const ACTIVATE_CONTRACT = gql`
   mutation ActivateContract($id: ID!) { activateContract(id: $id) { id status } }
+`;
+
+const UPDATE_CONTRACT_STATUS = gql`
+  mutation UpdateContractStatus($id: ID!, $status: String!) {
+    updateContract(id: $id, status: $status) { id status }
+  }
 `;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -216,7 +234,10 @@ function NewRequestModal({ open, onClose, refetch }: any) {
         <div>
           <label className={lbl}>Priority</label>
           <select value={urgency} onChange={e => setUrgency(e.target.value)} className={ic}>
-            {['LOW','NORMAL','HIGH','URGENT'].map(p => <option key={p}>{p}</option>)}
+            <option value="LOW">LOW</option>
+            <option value="NORMAL">NORMAL</option>
+            <option value="HIGH">HIGH</option>
+            <option value="URGENT">URGENT</option>
           </select>
         </div>
       </div>
@@ -370,7 +391,7 @@ function NewContractModal({ open, onClose, refetch, suppliers }: any) {
   const { toast } = useToast();
   const [form, setForm] = useState({
     supplierId: '', startDate: '', endDate: '', contractValue: '',
-    currency: 'ETB', paymentTerms: '', deliveryTerms: '', description: '',
+    currency: 'ETB', paymentTerms: '', deliveryTerms: '', description: '', status: 'DRAFT',
   });
   const [createContract, { loading }] = useMutation(CREATE_CONTRACT);
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
@@ -379,11 +400,22 @@ function NewContractModal({ open, onClose, refetch, suppliers }: any) {
     if (!form.supplierId || !form.startDate || !form.endDate || !form.contractValue) {
       toast({ type: 'error', title: 'Missing fields', message: 'Supplier, dates and value are required' }); return;
     }
+    
+    // Validate dates
+    const startDate = new Date(form.startDate);
+    const endDate = new Date(form.endDate);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      toast({ type: 'error', title: 'Invalid dates', message: 'Please provide valid start and end dates' }); return;
+    }
+    if (endDate <= startDate) {
+      toast({ type: 'error', title: 'Invalid date range', message: 'End date must be after start date' }); return;
+    }
+    
     try {
       const res = await createContract({ variables: { ...form, contractValue: Number(form.contractValue) } });
       toast({ type: 'success', title: 'Contract created', message: res.data.createContract.contractNumber });
       refetch(); onClose();
-      setForm({ supplierId: '', startDate: '', endDate: '', contractValue: '', currency: 'ETB', paymentTerms: '', deliveryTerms: '', description: '' });
+      setForm({ supplierId: '', startDate: '', endDate: '', contractValue: '', currency: 'ETB', paymentTerms: '', deliveryTerms: '', description: '', status: 'DRAFT' });
     } catch (e: any) { toast({ type: 'error', title: 'Failed', message: e.message }); }
   };
 
@@ -399,11 +431,28 @@ function NewContractModal({ open, onClose, refetch, suppliers }: any) {
         </div>
         <div>
           <label className={lbl}>Start Date *</label>
-          <input type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)} className={ic} />
+          <div className="relative">
+            <input 
+              type="date" 
+              value={form.startDate} 
+              onChange={e => set('startDate', e.target.value)} 
+              className={ic}
+              required
+            />
+          </div>
         </div>
         <div>
           <label className={lbl}>End Date *</label>
-          <input type="date" value={form.endDate} onChange={e => set('endDate', e.target.value)} className={ic} />
+          <div className="relative">
+            <input 
+              type="date" 
+              value={form.endDate} 
+              onChange={e => set('endDate', e.target.value)} 
+              className={ic}
+              min={form.startDate}
+              required
+            />
+          </div>
         </div>
         <div>
           <label className={lbl}>Contract Value (ETB) *</label>
@@ -427,6 +476,13 @@ function NewContractModal({ open, onClose, refetch, suppliers }: any) {
           <label className={lbl}>Description</label>
           <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2} className={ic} placeholder="Contract scope..." />
         </div>
+        <div className="col-span-2">
+          <label className={lbl}>Initial Status</label>
+          <select value={form.status} onChange={e => set('status', e.target.value)} className={ic}>
+            <option value="DRAFT">DRAFT</option>
+            <option value="ACTIVE">ACTIVE</option>
+          </select>
+        </div>
       </div>
       <div className="flex gap-3 pt-2">
         <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors cursor-pointer">Cancel</button>
@@ -446,6 +502,8 @@ function RequestsTab({ requests, loading, refetch }: any) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [submitRequest] = useMutation(SUBMIT_REQUEST);
   const [approveRequest] = useMutation(APPROVE_REQUEST);
+  const [updateRequestStatus] = useMutation(UPDATE_REQUEST_STATUS);
+  const [updateRequestPriority] = useMutation(UPDATE_REQUEST_PRIORITY);
 
   const handleSubmit = async (id: string, num: string) => {
     try {
@@ -457,8 +515,24 @@ function RequestsTab({ requests, loading, refetch }: any) {
 
   const handleApprove = async (id: string, num: string) => {
     try {
-      await approveRequest({ variables: { id } });
+      await approveRequest({ variables: { id, comments: 'Approved' } });
       toast({ type: 'success', title: 'Approved', message: `${num} approved` });
+      refetch();
+    } catch (e: any) { toast({ type: 'error', title: 'Failed', message: e.message }); }
+  };
+
+  const handleStatusChange = async (id: string, num: string, newStatus: string) => {
+    try {
+      await updateRequestStatus({ variables: { id, status: newStatus } });
+      toast({ type: 'success', title: 'Status Updated', message: `${num} changed to ${newStatus}` });
+      refetch();
+    } catch (e: any) { toast({ type: 'error', title: 'Failed', message: e.message }); }
+  };
+
+  const handlePriorityChange = async (id: string, num: string, newPriority: string) => {
+    try {
+      await updateRequestPriority({ variables: { id, priority: newPriority } });
+      toast({ type: 'success', title: 'Priority Updated', message: `${num} priority changed to ${newPriority}` });
       refetch();
     } catch (e: any) { toast({ type: 'error', title: 'Failed', message: e.message }); }
   };
@@ -482,8 +556,36 @@ function RequestsTab({ requests, loading, refetch }: any) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="font-mono text-sm font-semibold text-primary">{req.requestNumber}</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PRIORITY_STYLES[req.priority] || PRIORITY_STYLES.NORMAL}`}>{req.priority}</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[req.status] || 'bg-slate-100 text-slate-600'}`}>{req.status}</span>
+                <div className="relative">
+                  <select 
+                    onChange={(e) => { e.stopPropagation(); handlePriorityChange(req.id, req.requestNumber, e.target.value); }}
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer appearance-none pr-6 ${PRIORITY_STYLES[req.priority] || PRIORITY_STYLES.NORMAL}`}
+                    value={req.priority}
+                  >
+                    <option value="LOW">LOW</option>
+                    <option value="NORMAL">NORMAL</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="URGENT">URGENT</option>
+                  </select>
+                  <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
+                </div>
+                <div className="relative">
+                  <select 
+                    onChange={(e) => { e.stopPropagation(); handleStatusChange(req.id, req.requestNumber, e.target.value); }}
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer appearance-none pr-6 ${STATUS_STYLES[req.status] || 'bg-slate-100 text-slate-600'}`}
+                    value={req.status}
+                  >
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="SUBMITTED">SUBMITTED</option>
+                    <option value="UNDER_REVIEW">UNDER_REVIEW</option>
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="REJECTED">REJECTED</option>
+                    <option value="PROCUREMENT_IN_PROGRESS">PROCUREMENT_IN_PROGRESS</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                  <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
+                </div>
               </div>
               <p className="text-xs text-muted-foreground mt-1 truncate">{req.justification || 'No justification provided'}</p>
             </div>
@@ -556,6 +658,7 @@ function RequestsTab({ requests, loading, refetch }: any) {
 // ── Tenders Tab ───────────────────────────────────────────────────────────────
 function TendersTab({ tenders, loading, refetch }: any) {
   const { toast } = useToast();
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [publishTender] = useMutation(PUBLISH_TENDER);
 
   const handlePublish = async (id: string, num: string) => {
@@ -575,47 +678,95 @@ function TendersTab({ tenders, loading, refetch }: any) {
   );
 
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/30 text-muted-foreground text-xs uppercase border-b border-border">
-            <tr>
-              {['Tender #','Project','Category','Method','Market','Deadline','Validity','Status','Actions'].map(h => (
-                <th key={h} className="px-4 py-3 text-left whitespace-nowrap">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {tenders.map((t: any) => (
-              <tr key={t.id} className="border-b border-border hover:bg-muted/10 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{t.tenderNumber}</td>
-                <td className="px-4 py-3 font-medium text-foreground max-w-[160px] truncate">{t.projectName}</td>
-                <td className="px-4 py-3 text-muted-foreground">{t.procurementCategory}</td>
-                <td className="px-4 py-3"><span className="px-2 py-0.5 bg-muted rounded text-xs">{t.procurementMethod}</span></td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{t.marketType}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(t.submissionDeadline).toLocaleDateString()}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{t.bidValidityPeriod}d</td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[t.status] || 'bg-slate-100 text-slate-600'}`}>{t.status}</span>
-                </td>
-                <td className="px-4 py-3">
-                  {t.status === 'DRAFT' && (
-                    <button onClick={() => handlePublish(t.id, t.tenderNumber)}
-                      className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors flex items-center gap-1.5" title="Publish">
-                      <Send size={12} /> Publish
-                    </button>
+    <div className="space-y-2">
+      {tenders.map((t: any) => (
+        <div key={t.id} className="bg-card border border-border rounded-xl overflow-hidden">
+          <div
+            className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
+            onClick={() => setExpanded(e => e === t.id ? null : t.id)}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="font-mono text-sm font-semibold text-primary">{t.tenderNumber}</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[t.status] || 'bg-slate-100 text-slate-600'}`}>{t.status}</span>
+                <span className="px-2 py-0.5 bg-muted rounded text-xs">{t.procurementMethod}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 truncate">{t.projectName}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-xs text-muted-foreground">{t.marketType}</p>
+              <p className="text-xs text-muted-foreground">Due {new Date(t.submissionDeadline).toLocaleDateString()}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {t.status === 'DRAFT' && (
+                <button onClick={(e) => { e.stopPropagation(); handlePublish(t.id, t.tenderNumber); }}
+                  className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors flex items-center gap-1.5" title="Publish">
+                  <Send size={12} /> Publish
+                </button>
+              )}
+              {t.status === 'PUBLISHED' && (
+                <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium flex items-center gap-1.5">
+                  <CheckCircle2 size={12} /> Published
+                </span>
+              )}
+            </div>
+            <motion.span animate={{ rotate: expanded === t.id ? 180 : 0 }} transition={{ duration: 0.15 }}>
+              <ChevronDown size={15} className="text-muted-foreground" />
+            </motion.span>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {expanded === t.id && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                className="overflow-hidden border-t border-border bg-muted/10">
+                <div className="px-5 py-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Category</p>
+                      <p className="text-sm text-foreground">{t.procurementCategory || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Contract Type</p>
+                      <p className="text-sm text-foreground">{t.contractType || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Bid Validity</p>
+                      <p className="text-sm text-foreground">{t.bidValidityPeriod} days</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Bid Security</p>
+                      <p className="text-sm text-foreground">{t.bidSecurity ? fmt(t.bidSecurity) : '—'}</p>
+                    </div>
+                  </div>
+                  
+                  {t.items && t.items.length > 0 && (
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-xs text-muted-foreground uppercase">
+                        <th className="text-left pb-2">Description</th>
+                        <th className="text-center pb-2">Quantity</th>
+                        <th className="text-center pb-2">Unit</th>
+                      </tr></thead>
+                      <tbody>
+                        {t.items.map((item: any) => (
+                          <tr key={item.id} className="border-t border-border/40 hover:bg-muted/20 cursor-pointer transition-colors">
+                            <td className="py-2 text-foreground">{item.description}</td>
+                            <td className="py-2 text-center">{item.quantity}</td>
+                            <td className="py-2 text-center text-muted-foreground">{item.unit}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
-                  {t.status === 'PUBLISHED' && (
-                    <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium flex items-center gap-1.5">
-                      <CheckCircle2 size={12} /> Published
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  
+                  <p className="text-xs text-right text-muted-foreground mt-2">
+                    Created: {new Date(t.createdAt).toLocaleString()}
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      ))}
     </div>
   );
 }
@@ -623,12 +774,22 @@ function TendersTab({ tenders, loading, refetch }: any) {
 // ── Contracts Tab ─────────────────────────────────────────────────────────────
 function ContractsTab({ contracts, loading, refetch }: any) {
   const { toast } = useToast();
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [activateContract] = useMutation(ACTIVATE_CONTRACT);
+  const [updateContractStatus] = useMutation(UPDATE_CONTRACT_STATUS);
 
   const handleActivate = async (id: string, num: string) => {
     try {
       await activateContract({ variables: { id } });
       toast({ type: 'success', title: 'Activated', message: `${num} is now active` });
+      refetch();
+    } catch (e: any) { toast({ type: 'error', title: 'Failed', message: e.message }); }
+  };
+
+  const handleStatusChange = async (id: string, num: string, newStatus: string) => {
+    try {
+      await updateContractStatus({ variables: { id, status: newStatus } });
+      toast({ type: 'success', title: 'Status Updated', message: `${num} changed to ${newStatus}` });
       refetch();
     } catch (e: any) { toast({ type: 'error', title: 'Failed', message: e.message }); }
   };
@@ -642,47 +803,116 @@ function ContractsTab({ contracts, loading, refetch }: any) {
   );
 
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/30 text-muted-foreground text-xs uppercase border-b border-border">
-            <tr>
-              {['Contract #','Supplier','Value','Currency','Start','End','Payment','Status','Actions'].map(h => (
-                <th key={h} className="px-4 py-3 text-left whitespace-nowrap">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {contracts.map((c: any) => (
-              <tr key={c.id} className="border-b border-border hover:bg-muted/10 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{c.contractNumber}</td>
-                <td className="px-4 py-3 font-medium text-foreground">{c.supplier?.name || c.supplierId}</td>
-                <td className="px-4 py-3 font-semibold">{fmt(c.contractValue)}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{c.currency}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(c.startDate).toLocaleDateString()}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(c.endDate).toLocaleDateString()}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{c.paymentTerms || '—'}</td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[c.status] || 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
-                </td>
-                <td className="px-4 py-3">
-                  {c.status === 'DRAFT' && (
-                    <button onClick={() => handleActivate(c.id, c.contractNumber)}
-                      className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors flex items-center gap-1.5" title="Activate">
-                      <CheckCircle2 size={12} /> Activate
-                    </button>
+    <div className="space-y-2">
+      {contracts.map((c: any) => (
+        <div key={c.id} className="bg-card border border-border rounded-xl overflow-hidden">
+          <div
+            className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
+            onClick={() => setExpanded(e => e === c.id ? null : c.id)}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="font-mono text-sm font-semibold text-primary">{c.contractNumber}</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[c.status] || 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 truncate">{c.description || c.supplier?.name || 'No description'}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-sm font-semibold text-foreground">{fmt(c.contractValue)}</p>
+              <p className="text-xs text-muted-foreground">{c.currency} · {c.paymentTerms || '—'}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {c.status === 'DRAFT' && (
+                <button onClick={(e) => { e.stopPropagation(); handleActivate(c.id, c.contractNumber); }}
+                  className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors flex items-center gap-1.5" title="Activate">
+                  <CheckCircle2 size={12} /> Activate
+                </button>
+              )}
+              {c.status === 'ACTIVE' && (
+                <div className="flex items-center gap-1">
+                  <select 
+                    onChange={(e) => { e.stopPropagation(); handleStatusChange(c.id, c.contractNumber, e.target.value); }}
+                    className="px-2 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors cursor-pointer"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Select Action</option>
+                    <option value="EXPIRED">Mark Expired</option>
+                    <option value="TERMINATED">Terminate</option>
+                    <option value="CANCELLED">Cancel</option>
+                  </select>
+                </div>
+              )}
+              {c.status === 'ACTIVE' && (
+                <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium flex items-center gap-1.5">
+                  <CheckCircle2 size={12} /> Active
+                </span>
+              )}
+            </div>
+            <motion.span animate={{ rotate: expanded === c.id ? 180 : 0 }} transition={{ duration: 0.15 }}>
+              <ChevronDown size={15} className="text-muted-foreground" />
+            </motion.span>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {expanded === c.id && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                className="overflow-hidden border-t border-border bg-muted/10">
+                <div className="px-5 py-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Supplier</p>
+                      <p className="text-sm font-medium text-foreground">{c.supplier?.name || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Start Date</p>
+                      <p className="text-sm text-foreground">
+                        {c.startDate ? (new Date(c.startDate).toString() !== 'Invalid Date' ? new Date(c.startDate).toLocaleDateString() : '—') : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">End Date</p>
+                      <p className="text-sm text-foreground">
+                        {c.endDate ? (new Date(c.endDate).toString() !== 'Invalid Date' ? new Date(c.endDate).toLocaleDateString() : '—') : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Delivery Terms</p>
+                      <p className="text-sm text-foreground">{c.deliveryTerms || '—'}</p>
+                    </div>
+                  </div>
+                  
+                  {c.items && c.items.length > 0 && (
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-xs text-muted-foreground uppercase">
+                        <th className="text-left pb-2">Description</th>
+                        <th className="text-center pb-2">Quantity</th>
+                        <th className="text-center pb-2">Unit</th>
+                        <th className="text-right pb-2">Unit Price</th>
+                        <th className="text-right pb-2">Total</th>
+                      </tr></thead>
+                      <tbody>
+                        {c.items.map((item: any) => (
+                          <tr key={item.id} className="border-t border-border/40 hover:bg-muted/20 cursor-pointer transition-colors">
+                            <td className="py-2 text-foreground">{item.description}</td>
+                            <td className="py-2 text-center">{item.quantity}</td>
+                            <td className="py-2 text-center text-muted-foreground">{item.unit}</td>
+                            <td className="py-2 text-right text-muted-foreground">{fmt(item.unitPrice)}</td>
+                            <td className="py-2 text-right font-semibold">{fmt(item.totalPrice)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
-                  {c.status === 'ACTIVE' && (
-                    <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium flex items-center gap-1.5">
-                      <CheckCircle2 size={12} /> Active
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  
+                  <p className="text-xs text-right text-muted-foreground mt-2">
+                    Created: {new Date(c.createdAt).toLocaleString()}
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      ))}
     </div>
   );
 }
