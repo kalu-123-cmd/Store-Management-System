@@ -1,23 +1,19 @@
-## render.yaml — StoreOS Backend deployment on Render.com
-## Free tier: SQLite on a persistent disk (500 MB)
-## Docs: https://render.com/docs/infrastructure-as-code
+## StoreOS — automatic deploy (SQLite on disk)
+## Push to main → Render rebuilds if the GitHub repo is connected.
+## Best DB option for this codebase: SQLite on /data (no separate Postgres).
 
 services:
   - type: web
     name: storeos-api
     runtime: node
     region: oregon
-    plan: free                          # upgrade to starter ($7/mo) for always-on
+    plan: free
     rootDir: server
-    buildCommand: >
-      npm install &&
-      npx prisma generate &&
-      npm run build &&
-      npx prisma db push --accept-data-loss
-    startCommand: node dist/index.js
+    autoDeploy: true
+    buildCommand: npm install && npm run build
+    startCommand: node scripts/startProduction.cjs
     healthCheckPath: /health
 
-    # Persistent disk keeps the SQLite file between deploys
     disk:
       name: storeos-sqlite
       mountPath: /data
@@ -28,12 +24,13 @@ services:
         value: production
       - key: PORT
         value: 4000
+      # Overridden again at boot by startProduction.cjs when /data exists
       - key: DATABASE_URL
-        value: file:/data/prod.db        # stored on the persistent disk
+        value: file:/data/prod.db
       - key: JWT_SECRET
-        generateValue: true              # Render generates a random secret
+        generateValue: true
       - key: CLIENT_URL
-        sync: false                      # fill in your Vercel URL after deploy
+        value: https://client-sigma-two-88.vercel.app
       - key: RATE_LIMIT_MAX_REQUESTS
         value: 200
       - key: ENABLE_MONITORING

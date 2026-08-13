@@ -16,6 +16,16 @@ import { createDataLoaders } from './dataloaders';
 
 dotenv.config();
 
+// Production on Render: always use SQLite on the persistent disk.
+// Overrides stale/expired Postgres DATABASE_URL values from the dashboard.
+if (process.env.RENDER === 'true' || fs.existsSync('/data')) {
+  if (!fs.existsSync('/data')) {
+    try { fs.mkdirSync('/data', { recursive: true }); } catch { /* ignore */ }
+  }
+  process.env.DATABASE_URL = 'file:/data/prod.db';
+  console.log('[db] Using SQLite at', process.env.DATABASE_URL);
+}
+
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -378,7 +388,41 @@ app.get('/status', async (_req, res) => {
 
 // ── GraphQL ───────────────────────────────────────────────────────────────────
 
+async function ensureDatabaseReady() {
+  const { execSync } = await import('child_process');
+  try {
+    await prisma.$queryRawUnsafe('SELECT 1');
+  } catch {
+    console.log('[db] Schema missing — running prisma db push…');
+    execSync('npx prisma db push --accept-data-loss --skip-generate', {
+      stdio: 'inherit',
+      env: process.env,
+    });
+  }
+
+  try {
+    const users = await prisma.user.count();
+    if (users === 0) {
+      console.log('[db] No users — running seed…');
+      execSync('npx tsx prisma/seed.ts', { stdio: 'inherit', env: process.env });
+    }
+  } catch (e: any) {
+    console.warn('[db] Seed check failed:', e?.message || e);
+    try {
+      execSync('npx prisma db push --accept-data-loss --skip-generate', {
+        stdio: 'inherit',
+        env: process.env,
+      });
+      execSync('npx tsx prisma/seed.ts', { stdio: 'inherit', env: process.env });
+    } catch (seedErr: any) {
+      console.error('[db] Auto-seed failed:', seedErr?.message || seedErr);
+    }
+  }
+}
+
 async function startServer() {
+  await ensureDatabaseReady();
+
   const server = new ApolloServer({
     typeDefs,
     resolvers,

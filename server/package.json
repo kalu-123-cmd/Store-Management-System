@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "npx prisma db push && node dist/index.js",
+    "start": "node scripts/startProduction.cjs",
+    "start:dev-prod": "npx prisma db push && node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc --project tsconfig.build.json && npx prisma generate",
     "seed": "npx tsx prisma/seed.ts",
