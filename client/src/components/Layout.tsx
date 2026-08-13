@@ -8,7 +8,6 @@ import { useRole } from '../hooks/useRole';
 import { useLangContext } from '../lib/LangContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import StockAlertBell from './StockAlertBell';
-import Logo from './Logo';
 
 const GET_BRANCHES = gql`query { branches { id name isActive } }`;
 
@@ -122,7 +121,12 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   return (
     <div className="flex flex-col h-full">
       <div className="h-16 flex items-center justify-between px-5 border-b border-border shrink-0">
-        <Logo variant="compact" size="md" />
+        <Link to="/dashboard" className="flex items-center gap-2 min-w-0" onClick={onClose}>
+          <img src="/icon-192.png" alt="StoreOS" className="w-8 h-8 rounded-lg shrink-0" />
+          <span className="font-bold text-foreground tracking-tight text-lg">
+            Store<span className="text-blue-600">OS</span>
+          </span>
+        </Link>
         {onClose && (
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground md:hidden">
             <X size={20} />
@@ -211,7 +215,7 @@ export default function Layout() {
             >
               <Menu size={20} />
             </button>
-            <Logo variant="icon-only" size="sm" className="hidden md:block" />
+            <img src="/icon-192.png" alt="" className="hidden md:block w-7 h-7 rounded-md" />
             <h1 className="text-base font-semibold text-foreground">StoreOS - Smart Retail Management</h1>
           </div>
 

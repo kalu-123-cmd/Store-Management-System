@@ -1,87 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="url(#bg)"/>
   <defs>
-    <!-- Primary Gradient: Deep Navy Blue to Royal Blue -->
-    <linearGradient id="primaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#0f172a" />
-      <stop offset="50%" stopColor="#1e40af" />
-      <stop offset="100%" stopColor="#2563eb" />
-    </linearGradient>
-    
-    <!-- Analytics Bar Gradients -->
-    <linearGradient id="bar1Gradient" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" stopColor="#10b981" />
-      <stop offset="100%" stopColor="#34d399" />
-    </linearGradient>
-    <linearGradient id="bar2Gradient" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" stopColor="#2563eb" />
-      <stop offset="100%" stopColor="#3b82f6" />
-    </linearGradient>
-    <linearGradient id="bar3Gradient" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" stopColor="#f59e0b" />
-      <stop offset="100%" stopColor="#fbbf24" />
+    <linearGradient id="bg" x1="24" y1="24" x2="488" y2="488">
+      <stop stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#2563eb"/>
     </linearGradient>
   </defs>
-  
-  <!-- Shopping Cart forming "S" shape -->
-  <path
-    d="M64 96 L128 128 L384 128 L448 160 L448 384 L384 416 L128 416 L64 384 Z"
-    fill="url(#primaryGradient)"
-    stroke="url(#primaryGradient)"
-    stroke-width="4"
-    stroke-linejoin="round"
-  />
-  
-  <!-- Cart Handle - forming top of "S" -->
-  <path
-    d="M160 96 L160 64 Q160 32 192 32 L320 32 Q352 32 352 64 L352 96"
-    fill="none"
-    stroke="url(#primaryGradient)"
-    stroke-width="8"
-    stroke-linecap="round"
-  />
-  
-  <!-- Three Ascending Analytics Bars -->
-  <!-- Bar 1: Inventory (Emerald Green) -->
-  <rect
-    x="160"
-    y="256"
-    width="64"
-    height="96"
-    rx="8"
-    fill="url(#bar1Gradient)"
-  />
-  
-  <!-- Bar 2: Sales (Royal Blue) -->
-  <rect
-    x="224"
-    y="224"
-    width="64"
-    height="128"
-    rx="8"
-    fill="url(#bar2Gradient)"
-  />
-  
-  <!-- Bar 3: Growth (Warm Amber) -->
-  <rect
-    x="288"
-    y="192"
-    width="64"
-    height="160"
-    rx="8"
-    fill="url(#bar3Gradient)"
-  />
-  
-  <!-- Cart Wheels -->
-  <circle cx="160" cy="448" r="32" fill="#0f172a" />
-  <circle cx="352" cy="448" r="32" fill="#0f172a" />
-  
-  <!-- Subtle "S" curve accent for letter formation -->
-  <path
-    d="M128 224 Q256 224 256 320 Q256 416 384 416"
-    fill="none"
-    stroke="white"
-    stroke-width="4"
-    opacity="0.15"
-    stroke-linecap="round"
-  />
+  <path d="M118 168h276c14 0 24 12 22 26l-22 168c-2 14-14 24-28 24H146c-14 0-26-10-28-24l-22-168c-2-14 8-26 22-26z" fill="#fff"/>
+  <path d="M186 168V132c0-22 18-40 40-40h60c22 0 40 18 40 40v36" stroke="#fff" stroke-width="28" stroke-linecap="round" fill="none"/>
+  <rect x="176" y="268" width="44" height="72" rx="8" fill="#10b981"/>
+  <rect x="234" y="244" width="44" height="96" rx="8" fill="#2563eb"/>
+  <rect x="292" y="220" width="44" height="120" rx="8" fill="#f59e0b"/>
+  <circle cx="186" cy="412" r="22" fill="#0f172a"/>
+  <circle cx="326" cy="412" r="22" fill="#0f172a"/>
 </svg>
