@@ -1,32 +1,46 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { sendSaleReceipt, sendLowStockAlert } from '../email';
-import { createSaleTransaction, processSaleReturn } from '../services/posTransactionService';
+import { createAtomicSale, createAtomicReturn } from '../services/atomicSaleService';
 import { calculateFinancials } from '../services/inventoryService';
+import { adjustStockWithLedger, getRecentMovements } from '../services/inventoryLedgerService';
 import { createProcurementService } from '../services/procurementService';
 import { CSVImportService } from '../services/csvImportService';
+import {
+  validate,
+  RegisterSchema,
+  LoginSchema,
+  UpdateProfileSchema,
+  CreateCategorySchema,
+  UpdateCategorySchema,
+  CreateSupplierSchema,
+  UpdateSupplierSchema,
+  CreateCustomerSchema,
+  UpdateCustomerSchema,
+  CreateProductSchema,
+  UpdateProductSchema,
+  AdjustStockSchema,
+  CreateSaleSchema,
+  ReturnSaleSchema,
+  CreatePurchaseOrderSchema,
+  CreateBranchSchema,
+  UpdateBranchSchema,
+  CreateUserSchema,
+  UpdateUserRoleSchema,
+  CreateOrganizationSchema,
+} from '../validation/schemas';
+import {
+  requireAuth,
+  requireRole,
+  requirePermission,
+  hasPermission,
+  getPermissionsForRole,
+  PERMISSIONS,
+} from '../auth/permissions';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_jwt_key_12345';
-
-function requireAuth(user: any) {
-  if (!user) throw new Error('Not authenticated');
-}
-
-function requireRole(user: any, ...roles: string[]) {
-  requireAuth(user);
-  if (!roles.includes(user.role)) throw new Error('Not authorized');
-}
-
-// Simplified permission check with role fallback
-function requirePermission(user: any, permission: string, fallbackRoles?: string[]) {
-  requireAuth(user);
-  // For now, use role-based fallback if provided
-  if (fallbackRoles && fallbackRoles.includes(user.role)) return;
-  if (user.role === 'ADMIN') return;
-  // Temporarily allow MANAGER role for most operations
-  if (user.role === 'MANAGER') return;
-  throw new Error(`Not authorized: requires permission '${permission}' or role ${fallbackRoles?.join('/')}`);
-}
+// JWT_SECRET is validated at startup (index.ts). Resolvers re-use the same env var.
+// We intentionally do NOT use a hardcoded fallback here — the startup guard handles it.
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_only_insecure_secret_do_not_use_in_production';
 
 // ── Helper: map TraditionalItem DB record to GraphQL type ──────────────────
 function mapItem(item: any) {
@@ -62,7 +76,7 @@ export const resolvers = {
       };
     },
     users: async (_: any, __: any, { prisma, user }: any) => {
-      requirePermission(user, 'user:view', ['ADMIN']);
+      requirePermission(user, PERMISSIONS.USER_VIEW);
       return prisma.user.findMany();
     },
 
@@ -71,18 +85,23 @@ export const resolvers = {
       const where: any = {};
       if (search) where.OR = [
         { name: { contains: search } },
-        { sku: { contains: search } },
+        { sku:  { contains: search } },
         { barcode: { contains: search } },
+        { description: { contains: search } },
       ];
       if (categoryId) where.categoryId = categoryId;
       if (status) where.status = status;
       const products = await prisma.product.findMany({
         where,
-        include: { category: true, supplier: true, saleItems: true },
+        include: { category: true, supplier: true, saleItems: { select: { id: true } } },
+        orderBy: { name: 'asc' },
       });
       return products.map((p: any) => ({
         ...p,
-        profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100,
+        // Guard against division by zero — profitMargin is 0 if sellingPrice is 0
+        profitMargin: p.sellingPrice > 0
+          ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100
+          : 0,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
       }));
@@ -92,12 +111,14 @@ export const resolvers = {
       requireAuth(user);
       const p = await prisma.product.findUnique({
         where: { id },
-        include: { category: true, supplier: true, saleItems: true },
+        include: { category: true, supplier: true, saleItems: { select: { id: true } } },
       });
       if (!p) throw new Error('Product not found');
       return {
         ...p,
-        profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100,
+        profitMargin: p.sellingPrice > 0
+          ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100
+          : 0,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
       };
@@ -182,8 +203,59 @@ export const resolvers = {
       return txns.map((t: any) => ({ ...t, createdAt: t.createdAt.toISOString() }));
     },
 
+    // ── Inventory Ledger queries ──────────────────────────────────────────────────
+
+    inventoryMovements: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.INVENTORY_VIEW);
+      const { productId, movementType, userId: filterUserId, startDate, endDate, limit = 100, offset = 0 } = args;
+      const where: any = {};
+      if (productId)    where.productId    = productId;
+      if (movementType) where.movementType = movementType;
+      if (filterUserId) where.userId       = filterUserId;
+      if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) where.createdAt.gte = new Date(startDate);
+        if (endDate)   where.createdAt.lte = new Date(endDate);
+      }
+      const [movements, total] = await Promise.all([
+        (prisma as any).inventoryMovement.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: Math.min(limit, 500),
+          skip: offset,
+          include: { product: { select: { id: true, name: true, sku: true } } },
+        }),
+        (prisma as any).inventoryMovement.count({ where }),
+      ]);
+      return {
+        movements: movements.map((m: any) => ({ ...m, createdAt: m.createdAt.toISOString() })),
+        total,
+        hasMore: offset + movements.length < total,
+      };
+    },
+
+    productMovements: async (_: any, { productId, limit = 50, offset = 0 }: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.INVENTORY_VIEW);
+      const where = { productId };
+      const [movements, total] = await Promise.all([
+        (prisma as any).inventoryMovement.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: Math.min(limit, 500),
+          skip: offset,
+          include: { product: { select: { id: true, name: true, sku: true } } },
+        }),
+        (prisma as any).inventoryMovement.count({ where }),
+      ]);
+      return {
+        movements: movements.map((m: any) => ({ ...m, createdAt: m.createdAt.toISOString() })),
+        total,
+        hasMore: offset + movements.length < total,
+      };
+    },
+
     activityLogs: async (_: any, { userId, action, entityType, entityId, startDate, endDate }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.AUDIT_LOG_VIEW);
       const where: any = {};
       if (userId) where.userId = userId;
       if (action) where.action = action;
@@ -242,7 +314,8 @@ export const resolvers = {
         const inventoryValue = products.reduce((sum: number, p: any) => sum + p.costPrice * p.stock, 0);
         const monthlyRevenue = monthlySales.reduce((sum: number, s: any) => sum + s.totalAmount, 0);
         const monthlyProfit = monthlySales.reduce((sum: number, s: any) => {
-          return sum + s.items.reduce((isum: number, item: any) => isum + (item.price - item.product.costPrice) * item.quantity, 0);
+          // Use costPrice snapshot on SaleItem for accurate historical COGS
+          return sum + s.items.reduce((isum: number, item: any) => isum + (item.price - (item.costPrice ?? item.product?.costPrice ?? 0)) * item.quantity, 0);
         }, 0);
         const totalStock = products.reduce((sum: number, p: any) => sum + p.stock, 0);
         const lowStockCount = products.filter((p: any) => p.stock > 0 && p.stock <= p.minStockLevel).length;
@@ -304,7 +377,12 @@ export const resolvers = {
     lowStockProducts: async (_: any, __: any, { prisma, user }: any) => {
       try {
         requireAuth(user);
+        // Use a raw comparison to get only products where stock <= minStockLevel
+        // SQLite doesn't support column-to-column comparisons in Prisma where,
+        // so we fetch only ACTIVE products ordered by stock and filter in JS.
+        // This is acceptable at typical store scale (<10k products).
         const products = await prisma.product.findMany({
+          where: { status: 'ACTIVE' },
           include: { category: true, supplier: true },
           orderBy: { stock: 'asc' },
         });
@@ -312,6 +390,9 @@ export const resolvers = {
           .filter((p: any) => p.stock <= p.minStockLevel)
           .map((p: any) => ({
             ...p,
+            profitMargin: p.sellingPrice > 0
+              ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100
+              : 0,
             createdAt: p.createdAt?.toISOString?.() ?? p.createdAt,
             updatedAt: p.updatedAt?.toISOString?.() ?? p.updatedAt,
           }));
@@ -353,7 +434,8 @@ export const resolvers = {
         byDay[dateKey].revenue += s.totalAmount;
         byDay[dateKey].count += 1;
         byDay[dateKey].profit += s.items.reduce(
-          (sum: number, item: any) => sum + (item.price - item.product.costPrice) * item.quantity,
+          // Use costPrice snapshot on SaleItem for accurate historical COGS
+          (sum: number, item: any) => sum + (item.price - (item.costPrice ?? item.product?.costPrice ?? 0)) * item.quantity,
           0
         );
       }
@@ -384,7 +466,7 @@ export const resolvers = {
     },
 
     getImportHistory: async (_: any, __: any, { prisma, user }: any) => {
-      requirePermission(user, 'product:view', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PRODUCT_IMPORT);
 
       const csvService = new CSVImportService(prisma);
       const history = await csvService.getImportHistory();
@@ -518,17 +600,12 @@ export const resolvers = {
         assignedAt: ur.assignedAt.toISOString(),
       }));
     },
-    myPermissions: async (_: any, __: any, { prisma, user }: any) => {
+    myPermissions: async (_: any, __: any, { user }: any) => {
       requireAuth(user);
-      const userRoles = await prisma.userRole.findMany({
-        where: { userId: user.id },
-        include: { role: { include: { permissions: true } } },
-      });
-      const permissions = new Set();
-      userRoles.forEach((ur: any) => {
-        ur.role.permissions.forEach((p: any) => permissions.add(p.name));
-      });
-      return Array.from(permissions);
+      // Return permissions derived from the in-memory permission matrix (fast, no DB query needed)
+      // Also merge any DB-stored role permissions for advanced overrides
+      const matrixPerms = getPermissionsForRole(user.role);
+      return matrixPerms;
     },
     myOrganizations: async (_: any, __: any, { prisma, user }: any) => {
       requireAuth(user);
@@ -757,7 +834,7 @@ export const resolvers = {
     myBids: async (_: any, __: any, { prisma, user }: any) => {
       requireAuth(user);
       return prisma.bid.findMany({
-        where: { supplier: { name: { contains: user.name } } },
+        where: { supplier: { name: { contains: (user as any).name ?? '' } } },
         include: { tender: true, supplier: true },
         orderBy: { createdAt: 'desc' },
       });
@@ -970,7 +1047,7 @@ export const resolvers = {
     // Audit & Risk queries (Phase 9)
 
     activityLog: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.AUDIT_LOG_VIEW);
       const log = await prisma.activityLog.findUnique({
         where: { id },
         include: { user: true },
@@ -978,7 +1055,7 @@ export const resolvers = {
       return log ? { ...log, createdAt: log.createdAt.toISOString() } : null;
     },
     entityHistory: async (_: any, { entityType, entityId }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.AUDIT_LOG_VIEW);
       const logs = await prisma.activityLog.findMany({
         where: { entityType, entityId },
         include: { user: true },
@@ -987,7 +1064,7 @@ export const resolvers = {
       return logs.map((l: any) => ({ ...l, createdAt: l.createdAt.toISOString() }));
     },
     auditExport: async (_: any, { entityType, entityId, startDate, endDate }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_EXPORT);
       const where: any = {};
       if (entityType) where.entityType = entityType;
       if (entityId) where.entityId = entityId;
@@ -1018,7 +1095,7 @@ export const resolvers = {
     },
 
     riskIndicators: async (_: any, { entityType, entityId, riskType, severity, status }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       const where: any = {};
       if (entityType) where.entityType = entityType;
       if (entityId) where.entityId = entityId;
@@ -1031,11 +1108,11 @@ export const resolvers = {
       });
     },
     riskIndicator: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       return prisma.riskIndicator.findUnique({ where: { id } });
     },
     openRisks: async (_: any, { severity }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       const where: any = { status: 'OPEN' };
       if (severity) where.severity = severity;
       return prisma.riskIndicator.findMany({
@@ -1044,7 +1121,7 @@ export const resolvers = {
       });
     },
     highRiskEntities: async (_: any, { entityType }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       const risks = await prisma.riskIndicator.groupBy({
         by: ['entityId'],
         where: { entityType, status: 'OPEN', severity: { in: ['HIGH', 'CRITICAL'] } },
@@ -1053,7 +1130,7 @@ export const resolvers = {
       return risks.map((r: any) => r.entityId);
     },
     riskSummary: async (_: any, __: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       const summary = await prisma.riskIndicator.groupBy({
         by: ['riskType', 'severity', 'status'],
         _count: { id: true },
@@ -1074,7 +1151,7 @@ export const resolvers = {
     // Reporting & Analytics queries (Phase 10)
 
     inventoryReport: async (_: any, { warehouseId, categoryId }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       
       const where: any = { status: 'ACTIVE' };
       if (warehouseId) where.warehouseId = warehouseId;
@@ -1144,7 +1221,7 @@ export const resolvers = {
       };
     },
     procurementReport: async (_: any, { departmentId, startDate, endDate }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       
       const where: any = {};
       if (departmentId) where.departmentId = departmentId;
@@ -1201,7 +1278,7 @@ export const resolvers = {
       };
     },
     assetReport: async (_: any, { departmentId, categoryId }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       
       const where: any = {};
       if (departmentId) where.departmentId = departmentId;
@@ -1258,7 +1335,7 @@ export const resolvers = {
       };
     },
     analytics: async (_: any, __: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       
       // Simple trend data (placeholder - would need historical data)
       const inventoryTrends = [
@@ -1329,7 +1406,7 @@ export const resolvers = {
       };
     },
     exportReport: async (_: any, { reportType, filters, format }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_EXPORT);
       
       let data: any[] = [];
       let headers: string[] = [];
@@ -1494,7 +1571,7 @@ export const resolvers = {
     // ── PurchaseOrder queries ───────────────────────────────────────────────
 
     purchaseOrders: async (_: any, __: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       const orders = await prisma.purchaseOrder.findMany({
         orderBy: { createdAt: 'desc' },
         include: { supplier: true, user: true, items: { include: { product: true } } },
@@ -1508,7 +1585,7 @@ export const resolvers = {
     },
 
     purchaseOrder: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       const o = await prisma.purchaseOrder.findUnique({
         where: { id },
         include: { supplier: true, user: true, items: { include: { product: true } } },
@@ -1543,15 +1620,19 @@ export const resolvers = {
   },
 
   Mutation: {
-    register: async (_: any, { name, email, password, role }: any, { prisma }: any) => {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await prisma.user.create({ data: { name, email, password: hashedPassword, role: role || 'CASHIER' } });
+    register: async (_: any, args: any, { prisma }: any) => {
+      const data = validate(RegisterSchema, args);
+      const hashedPassword = await bcrypt.hash(data.password, 12);
+      const user = await prisma.user.create({
+        data: { name: data.name, email: data.email, password: hashedPassword, role: data.role || 'CASHIER' },
+      });
       const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
       return { token, user: { ...user, createdAt: user.createdAt.toISOString() } };
     },
 
-    login: async (_: any, { email, password }: any, { prisma, requestIp }: any) => {
-      const raw = String(email || '').trim();
+    login: async (_: any, args: any, { prisma, requestIp }: any) => {
+      const input = validate(LoginSchema, args);
+      const raw = input.email.trim();
       const aliases: Record<string, string> = {
         'admin@storemanagement.com': 'admin@store.com',
         'manager@storemanagement.com': 'manager@store.com',
@@ -1562,7 +1643,7 @@ export const resolvers = {
         (await prisma.user.findUnique({ where: { email: lookup } })) ||
         (await prisma.user.findUnique({ where: { email: raw } }));
       if (!user) throw new Error('Invalid credentials');
-      const valid = await bcrypt.compare(password, user.password);
+      const valid = await bcrypt.compare(input.password, user.password);
       if (!valid) throw new Error('Invalid credentials');
       const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
       try {
@@ -1582,84 +1663,83 @@ export const resolvers = {
       return { token, user: { ...user, createdAt: user.createdAt.toISOString() } };
     },
 
-    createCategory: async (_: any, { name, description }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
-      return prisma.category.create({ data: { name, description } });
+    createCategory: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.CATEGORY_CREATE);
+      const data = validate(CreateCategorySchema, args);
+      return prisma.category.create({ data });
     },
-    updateCategory: async (_: any, { id, name, description }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
-      return prisma.category.update({ where: { id }, data: { name, description } });
+    updateCategory: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.CATEGORY_UPDATE);
+      const { id, ...rest } = validate(UpdateCategorySchema, args);
+      return prisma.category.update({ where: { id }, data: rest });
     },
     deleteCategory: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
+      requirePermission(user, PERMISSIONS.CATEGORY_DELETE);
       await prisma.category.delete({ where: { id } });
       return true;
     },
 
     createSupplier: async (_: any, args: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
-      return prisma.supplier.create({
-        data: {
-          name:        args.name,
-          contactName: args.contactName || null,
-          email:       args.email       || null,
-          phone:       args.phone       || null,
-          address:     args.address     || null,
-        },
-      });
+      requirePermission(user, PERMISSIONS.SUPPLIER_CREATE);
+      const data = validate(CreateSupplierSchema, args);
+      return prisma.supplier.create({ data });
     },
-    updateSupplier: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
-      return prisma.supplier.update({ where: { id }, data });
+    updateSupplier: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.SUPPLIER_UPDATE);
+      const { id, ...rest } = validate(UpdateSupplierSchema, args);
+      return prisma.supplier.update({ where: { id }, data: rest });
     },
     deleteSupplier: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
+      requirePermission(user, PERMISSIONS.SUPPLIER_DELETE);
       await prisma.supplier.delete({ where: { id } });
       return true;
     },
 
     createCustomer: async (_: any, args: any, { prisma, user }: any) => {
       requireAuth(user);
-      const c = await prisma.customer.create({ data: args });
+      const data = validate(CreateCustomerSchema, args);
+      const c = await prisma.customer.create({ data });
       return { ...c, createdAt: c.createdAt.toISOString(), totalSpent: 0, purchaseCount: 0 };
     },
-    updateCustomer: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
+    updateCustomer: async (_: any, args: any, { prisma, user }: any) => {
       requireAuth(user);
-      const c = await prisma.customer.update({ where: { id }, data });
+      const { id, ...rest } = validate(UpdateCustomerSchema, args);
+      const c = await prisma.customer.update({ where: { id }, data: rest });
       return { ...c, createdAt: c.createdAt.toISOString(), totalSpent: 0, purchaseCount: 0 };
     },
     deleteCustomer: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.CUSTOMER_DELETE);
       await prisma.customer.delete({ where: { id } });
       return true;
     },
 
     createProduct: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'product:create', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PRODUCT_CREATE);
+      const input = validate(CreateProductSchema, args);
 
       // Check for duplicate SKU before attempting insert
-      const existing = await prisma.product.findUnique({ where: { sku: args.sku } });
-      if (existing) throw new Error(`SKU "${args.sku}" already exists. Please use a different SKU.`);
+      const existing = await prisma.product.findUnique({ where: { sku: input.sku } });
+      if (existing) throw new Error(`SKU "${input.sku}" already exists. Please use a different SKU.`);
 
       // Check duplicate barcode only if one was provided
-      if (args.barcode) {
-        const barcodeExists = await prisma.product.findUnique({ where: { barcode: args.barcode } });
-        if (barcodeExists) throw new Error(`Barcode "${args.barcode}" is already assigned to "${barcodeExists.name}".`);
+      if (input.barcode) {
+        const barcodeExists = await prisma.product.findUnique({ where: { barcode: input.barcode } });
+        if (barcodeExists) throw new Error(`Barcode "${input.barcode}" is already assigned to "${barcodeExists.name}".`);
       }
 
       const data: any = {
-        name:          args.name,
-        sku:           args.sku,
-        costPrice:     args.costPrice,
-        sellingPrice:  args.sellingPrice,
-        categoryId:    args.categoryId,
-        stock:         args.stock         ?? 0,
-        minStockLevel: args.minStockLevel ?? 10,
-        status:        args.status        ?? 'ACTIVE',
-        description:   args.description   || null,
-        imageUrl:      args.imageUrl      || null,
-        barcode:       args.barcode       || null,
-        supplierId:    args.supplierId    || null,
+        name:          input.name,
+        sku:           input.sku,
+        costPrice:     input.costPrice,
+        sellingPrice:  input.sellingPrice,
+        categoryId:    input.categoryId,
+        stock:         input.stock ?? 0,
+        minStockLevel: input.minStockLevel ?? 10,
+        status:        input.status ?? 'ACTIVE',
+        description:   input.description   || null,
+        imageUrl:      input.imageUrl      || null,
+        barcode:       input.barcode       || null,
+        supplierId:    input.supplierId    || null,
       };
 
       const p = await prisma.product.create({
@@ -1670,26 +1750,27 @@ export const resolvers = {
       return { ...p, profitMargin: ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() };
     },
 
-    updateProduct: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'product:update', ['ADMIN', 'MANAGER']);
+    updateProduct: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.PRODUCT_UPDATE);
+      const { id, ...input } = validate(UpdateProductSchema, args);
 
       // Check SKU uniqueness if SKU is being changed
-      if (args.sku) {
+      if (input.sku) {
         const skuConflict = await prisma.product.findFirst({
-          where: { sku: args.sku, NOT: { id } },
+          where: { sku: input.sku, NOT: { id } },
         });
-        if (skuConflict) throw new Error(`SKU "${args.sku}" is already used by "${skuConflict.name}".`);
+        if (skuConflict) throw new Error(`SKU "${input.sku}" is already used by "${skuConflict.name}".`);
       }
 
       // Check barcode uniqueness if barcode is being changed
-      if (args.barcode) {
+      if (input.barcode) {
         const barcodeConflict = await prisma.product.findFirst({
-          where: { barcode: args.barcode, NOT: { id } },
+          where: { barcode: input.barcode, NOT: { id } },
         });
-        if (barcodeConflict) throw new Error(`Barcode "${args.barcode}" is already assigned to "${barcodeConflict.name}".`);
+        if (barcodeConflict) throw new Error(`Barcode "${input.barcode}" is already assigned to "${barcodeConflict.name}".`);
       }
 
-      const data: any = { ...args };
+      const data: any = { ...input };
       if ('barcode'     in data) data.barcode     = data.barcode     || null;
       if ('imageUrl'    in data) data.imageUrl    = data.imageUrl    || null;
       if ('description' in data) data.description = data.description || null;
@@ -1705,7 +1786,7 @@ export const resolvers = {
     },
 
     deleteProduct: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'product:delete', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PRODUCT_DELETE);
       const p = await prisma.product.findUnique({
         where: { id },
         include: { saleItems: true, transactions: true },
@@ -1728,20 +1809,25 @@ export const resolvers = {
       return true;
     },
 
-    adjustStock: async (_: any, { productId, quantity, type, notes }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory:adjust', ['ADMIN', 'MANAGER', 'WAREHOUSE_MANAGER']);
-      const product = await prisma.product.findUnique({ where: { id: productId } });
-      if (!product) throw new Error('Product not found');
+    adjustStock: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.INVENTORY_ADJUST);
+      const { productId, quantity, type, notes } = validate(AdjustStockSchema, args);
+      // Use the inventory ledger service for all stock adjustments
+      // This records an immutable movement entry alongside the product stock update
+      const { previousStock, newStock } = await adjustStockWithLedger(prisma, {
+        productId,
+        quantity,
+        type: type as 'IN' | 'OUT' | 'ADJUSTMENT',
+        userId: user.id,
+        notes,
+        referenceType: 'ADJUSTMENT',
+      });
 
-      let newStock = product.stock;
-      if (type === 'IN') newStock += quantity;
-      else if (type === 'OUT') newStock -= quantity;
-      else if (type === 'ADJUSTMENT') newStock = quantity;
-
-      if (newStock < 0) throw new Error('Insufficient stock');
-
-      await prisma.product.update({ where: { id: productId }, data: { stock: newStock } });
-      const financials = calculateFinancials(product.sellingPrice, quantity);
+      // Also write to the legacy Transaction table for backward compatibility
+      const financials = calculateFinancials(
+        (await prisma.product.findUnique({ where: { id: productId }, select: { sellingPrice: true } }))?.sellingPrice ?? 0,
+        quantity
+      );
       const txn = await prisma.transaction.create({
         data: {
           productId,
@@ -1749,17 +1835,28 @@ export const resolvers = {
           type,
           notes,
           userId: user.id,
-          unitPrice: financials.unitPrice.toNumber(),
-          subtotal: financials.subtotal.toNumber(),
-          vatAmount: financials.vatAmount.toNumber(),
-          totalAmount: financials.totalAmount.toNumber(),
-          clearanceStatus: 'PENDING_CLEARANCE',
+          unitPrice:       financials.unitPrice.toNumber(),
+          subtotal:        financials.subtotal.toNumber(),
+          vatAmount:       financials.vatAmount.toNumber(),
+          totalAmount:     financials.totalAmount.toNumber(),
+          clearanceStatus: 'CLEARED',
         },
         include: { product: true },
       });
-      await prisma.activityLog.create({ data: { userId: user.id, action: 'STOCK_ADJUSTED', details: `${type} ${quantity} units of ${product.name}` } });
 
-      // Check if any product is now at or below threshold and alert
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'STOCK_ADJUSTED',
+          entityType: 'PRODUCT',
+          entityId:   productId,
+          details:    `${type} ${quantity} units of ${txn.product?.name ?? productId}`,
+          oldValue:   JSON.stringify({ stock: previousStock }),
+          newValue:   JSON.stringify({ stock: newStock }),
+        },
+      });
+
+      // Low-stock alert
       const updatedProduct = await prisma.product.findUnique({ where: { id: productId } });
       if (updatedProduct && updatedProduct.stock <= updatedProduct.minStockLevel) {
         sendLowStockAlert([updatedProduct]).catch(() => {});
@@ -1768,114 +1865,134 @@ export const resolvers = {
       return { ...txn, createdAt: txn.createdAt.toISOString() };
     },
 
-    createSale: async (_: any, { customerId, items, paymentMethod, paymentAmount, branchId, notes }: any, { prisma, user }: any) => {
-      requirePermission(user, 'sale:create', ['ADMIN', 'MANAGER', 'CASHIER', 'SALES_STAFF']);
+    createSale: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.SALE_CREATE);
+      const input = validate(CreateSaleSchema, args);
 
-      // Use the new POS transaction service
-      const result = await createSaleTransaction(prisma, {
-        customerId,
-        items: items.map((i: any) => ({
+      // Default payment amount = subtotal + 15% VAT when not explicitly provided
+      const defaultPayment = (() => {
+        const sub = input.items.reduce((s: number, i: any) => s + i.price * i.quantity, 0);
+        return Math.round(sub * 1.15 * 100) / 100;
+      })();
+
+      // Use the atomic sale service — single transaction, no nested transactions,
+      // stock deducted with conditional decrement guard, idempotency key supported
+      const result = await createAtomicSale(prisma, {
+        customerId:     input.customerId,
+        items:          input.items.map((i: any) => ({
           productId: i.productId,
-          quantity: i.quantity,
-          price: i.price,
+          quantity:  i.quantity,
+          price:     i.price,
         })),
-        paymentMethod: paymentMethod || 'CASH',
-        paymentAmount: paymentAmount ?? (() => {
-          // default includes 15% VAT to match posTransactionService totalAmount calculation
-          const sub = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
-          return Math.round(sub * 1.15 * 100) / 100;
-        })(),
-        cashierId: user.id,
-        branchId,
-        notes,
-        sessionId: undefined, // Would come from frontend
-        requestId: undefined, // Would come from frontend
+        paymentMethod:  input.paymentMethod || 'CASH',
+        paymentAmount:  input.paymentAmount ?? defaultPayment,
+        cashierId:      user.id,
+        branchId:       input.branchId,
+        notes:          input.notes,
+        idempotencyKey: (args as any).idempotencyKey ?? undefined,
       });
 
       if (!result.success) {
         throw new Error(result.error || 'Sale transaction failed');
       }
 
+      // Re-fetch the complete sale for proper GraphQL resolution
+      const sale = await prisma.sale.findUnique({
+        where:   { id: result.saleId },
+        include: { items: { include: { product: true } }, customer: true, user: true, returns: true },
+      });
+
+      if (!sale) throw new Error('Sale created but could not be retrieved');
+
+      // Trigger low-stock emails for affected products (non-blocking)
+      const productIds = input.items.map((i: any) => i.productId);
+      prisma.product.findMany({
+        where:  { id: { in: productIds }, stock: { lte: prisma.product.fields.minStockLevel } },
+      }).then((lowStocks: any[]) => {
+        if (lowStocks.length > 0) sendLowStockAlert(lowStocks).catch(() => {});
+        // Send receipt email (non-blocking)
+        sendSaleReceipt(sale).catch(() => {});
+      }).catch(() => {});
+
       return {
-        id: result.saleId,
-        invoiceNo: result.invoiceNo,
-        totalAmount: result.totalAmount,
-        subtotal: result.subtotal,
-        vatAmount: result.vatAmount,
-        customerId,
-        customer: customerId ? await prisma.customer.findUnique({ where: { id: customerId } }) : null,
-        userId: user.id,
-        user,
-        items: result.items,
-        createdAt: new Date().toISOString(),
-        paymentMethod,
-        paymentStatus: result.paymentStatus,
-        creditAmount: result.creditAmount || 0,
-        cogsAmount: result.cogsAmount,
+        ...sale,
+        createdAt:    sale.createdAt.toISOString(),
+        cogsAmount:   result.cogsAmount,
         profitAmount: result.profitAmount,
+        creditAmount: result.creditAmount ?? 0,
       };
     },
 
-    returnSale: async (_: any, { saleId, reason, items }: any, { prisma, user }: any) => {
-      requirePermission(user, 'sale:refund', ['ADMIN', 'MANAGER']);
+    returnSale: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.SALE_REFUND);
+      const input = validate(ReturnSaleSchema, args);
 
-      // Use the new return processing service
-      const result = await processSaleReturn(
-        prisma,
-        saleId,
-        items || [], // If items not provided, return full sale
-        reason,
-        user.id
-      );
+      // Use the new atomic return service — all restocks + ledger in one transaction
+      const result = await createAtomicReturn(prisma, {
+        saleId:  input.saleId,
+        reason:  input.reason || 'Customer return',
+        userId:  user.id,
+        items:   (input.items || []).map((i: any) => ({
+          saleItemId: i.saleItemId as string,
+          quantity:   i.quantity as number,
+        })),
+      });
 
       if (!result.success) {
         throw new Error(result.error || 'Return processing failed');
       }
 
       const sale = await prisma.sale.findUnique({
-        where: { id: saleId },
+        where:   { id: input.saleId },
         include: { items: { include: { product: true } }, returns: true },
       });
 
+      if (!sale) throw new Error('Sale not found after return');
+
       return {
         ...sale,
-        createdAt: sale.createdAt.toISOString(),
+        createdAt:    sale.createdAt.toISOString(),
         refundAmount: result.refundAmount,
       };
     },
 
-    updateProfile: async (_: any, { name, currentPassword, newPassword }: any, { prisma, user }: any) => {
+    updateProfile: async (_: any, args: any, { prisma, user }: any) => {
       requireAuth(user);
+      const input = validate(UpdateProfileSchema, args);
       const existing = await prisma.user.findUnique({ where: { id: user.id } });
       if (!existing) throw new Error('User not found');
-      const valid = await bcrypt.compare(currentPassword, existing.password);
+      const valid = await bcrypt.compare(input.currentPassword, existing.password);
       if (!valid) throw new Error('Current password is incorrect');
       const data: any = {};
-      if (name) data.name = name;
-      if (newPassword) {
-        if (newPassword.length < 6) throw new Error('New password must be at least 6 characters');
-        data.password = await bcrypt.hash(newPassword, 10);
+      if (input.name) data.name = input.name;
+      if (input.newPassword) {
+        data.password = await bcrypt.hash(input.newPassword, 12);
       }
       const updated = await prisma.user.update({ where: { id: user.id }, data });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'PROFILE_UPDATED', details: 'User updated their profile' } });
       return { ...updated, createdAt: updated.createdAt.toISOString() };
     },
 
-    createUser: async (_: any, { name, email, password, role }: any, { prisma, user }: any) => {
-      requirePermission(user, 'user:create', ['ADMIN']);
-      const hashedPassword = await bcrypt.hash(password, 10);
+    createUser: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.USER_CREATE);
+      const input = validate(CreateUserSchema, args);
+      // Check for duplicate email
+      const existing = await prisma.user.findUnique({ where: { email: input.email } });
+      if (existing) throw new Error(`Email "${input.email}" is already in use.`);
+      const hashedPassword = await bcrypt.hash(input.password, 12);
       const newUser = await prisma.user.create({
-        data: { name, email, password: hashedPassword, role },
+        data: { name: input.name, email: input.email, password: hashedPassword, role: input.role },
       });
-      await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_CREATED', details: `Created user: ${name} (${role})` } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_CREATED', details: `Created user: ${input.name} (${input.role})` } });
       return { ...newUser, createdAt: newUser.createdAt.toISOString() };
     },
 
-    updateUserRole: async (_: any, { id, role }: any, { prisma, user }: any) => {
-      requirePermission(user, 'user:manage_roles', ['ADMIN']);
-      if (id === user.id) throw new Error('You cannot change your own role');
-      const updated = await prisma.user.update({ where: { id }, data: { role } });
-      await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_ROLE_CHANGED', details: `Changed role of user ${updated.name} to ${role}` } });
+    updateUserRole: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.USER_MANAGE_ROLES);
+      const input = validate(UpdateUserRoleSchema, args);
+      if (input.id === user.id) throw new Error('You cannot change your own role');
+      const updated = await prisma.user.update({ where: { id: input.id }, data: { role: input.role } });
+      await prisma.activityLog.create({ data: { userId: user.id, action: 'USER_ROLE_CHANGED', details: `Changed role of user ${updated.name} to ${input.role}` } });
       return { ...updated, createdAt: updated.createdAt.toISOString() };
     },
 
@@ -1891,8 +2008,9 @@ export const resolvers = {
 
     // ── PurchaseOrder mutations ─────────────────────────────────────────────
 
-    createPurchaseOrder: async (_: any, { supplierId, notes, items }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+    createPurchaseOrder: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
+      const input = validate(CreatePurchaseOrderSchema, args);
 
       // Auto-generate PO number: PO-0001, PO-0002 …
       const last = await prisma.purchaseOrder.findFirst({ orderBy: { createdAt: 'desc' } });
@@ -1906,11 +2024,11 @@ export const resolvers = {
       const order = await prisma.purchaseOrder.create({
         data: {
           poNumber,
-          supplierId: supplierId || null,
-          notes: notes || null,
+          supplierId: input.supplierId || null,
+          notes: input.notes || null,
           userId: user.id,
           status: 'DRAFT',
-          items: { create: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity, unitCost: i.unitCost })) },
+          items: { create: input.items.map((i: any) => ({ productId: i.productId, quantity: i.quantity, unitCost: i.unitCost })) },
         },
         include: { supplier: true, user: true, items: { include: { product: true } } },
       });
@@ -1919,7 +2037,7 @@ export const resolvers = {
     },
 
     updatePurchaseOrderStatus: async (_: any, { id, status }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const order = await prisma.purchaseOrder.update({
         where: { id },
         data: { status },
@@ -1930,7 +2048,7 @@ export const resolvers = {
     },
 
     receivePurchaseOrder: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.PURCHASE_RECEIVE);
       const order = await prisma.purchaseOrder.findUnique({
         where: { id },
         include: { items: { include: { product: true } } },
@@ -1938,23 +2056,76 @@ export const resolvers = {
       if (!order) throw new Error('Purchase order not found');
       if (order.status === 'RECEIVED') throw new Error('Already received');
 
-      // Add stock for each item
-      for (const item of order.items) {
-        await prisma.product.update({ where: { id: item.productId }, data: { stock: { increment: item.quantity } } });
-        await prisma.transaction.create({ data: { productId: item.productId, quantity: item.quantity, type: 'IN', notes: `PO ${order.poNumber}`, userId: user.id } });
-      }
+      // Process all items in a single transaction — stock update + ledger + legacy transaction
+      await prisma.$transaction(async (tx: any) => {
+        for (const item of order.items) {
+          const previousStock = item.product?.stock ?? 0;
+          const newStock      = previousStock + item.quantity;
+
+          // Update product stock
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity }, updatedAt: new Date() },
+          });
+
+          // Record in inventory ledger
+          await tx.inventoryMovement.create({
+            data: {
+              productId:     item.productId,
+              movementType:  'PURCHASE',
+              quantity:      item.quantity,   // positive = stock increase
+              previousStock,
+              newStock,
+              referenceType: 'PURCHASE_ORDER',
+              referenceId:   order.id,
+              unitCost:      item.unitCost,
+              userId:        user.id,
+              notes:         `PO ${order.poNumber}`,
+            },
+          });
+
+          // Keep legacy Transaction table in sync
+          await tx.transaction.create({
+            data: {
+              productId:       item.productId,
+              quantity:        item.quantity,
+              type:            'IN',
+              notes:           `PO ${order.poNumber}`,
+              userId:          user.id,
+              unitPrice:       item.unitCost,
+              subtotal:        item.unitCost * item.quantity,
+              vatAmount:       0,
+              totalAmount:     item.unitCost * item.quantity,
+              clearanceStatus: 'CLEARED',
+            },
+          });
+        }
+      });
 
       const updated = await prisma.purchaseOrder.update({
         where: { id },
-        data: { status: 'RECEIVED' },
+        data:  { status: 'RECEIVED' },
         include: { supplier: true, user: true, items: { include: { product: true } } },
       });
-      await prisma.activityLog.create({ data: { userId: user.id, action: 'PO_RECEIVED', details: `Received Purchase Order ${order.poNumber} — stock updated` } });
-      return { ...updated, totalCost: updated.items.reduce((s: number, i: any) => s + i.unitCost * i.quantity, 0), createdAt: updated.createdAt.toISOString(), updatedAt: updated.updatedAt.toISOString() };
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'PO_RECEIVED',
+          entityType: 'PURCHASE_ORDER',
+          entityId:   order.id,
+          details:    `Received Purchase Order ${order.poNumber} — ${order.items.length} item(s) stocked`,
+        },
+      });
+      return {
+        ...updated,
+        totalCost:  updated.items.reduce((s: number, i: any) => s + i.unitCost * i.quantity, 0),
+        createdAt:  updated.createdAt.toISOString(),
+        updatedAt:  updated.updatedAt.toISOString(),
+      };
     },
 
     deletePurchaseOrder: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const order = await prisma.purchaseOrder.findUnique({ where: { id } });
       if (!order) throw new Error('Not found');
       if (order.status === 'RECEIVED') throw new Error('Cannot delete a received purchase order');
@@ -1964,20 +2135,22 @@ export const resolvers = {
     },
 
     createBranch: async (_: any, args: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
-      const b = await prisma.branch.create({ data: { name: args.name, address: args.address || null, phone: args.phone || null, manager: args.manager || null } });
+      requirePermission(user, PERMISSIONS.BRANCH_MANAGE);
+      const input = validate(CreateBranchSchema, args);
+      const b = await prisma.branch.create({ data: { name: input.name, address: input.address || null, phone: input.phone || null, manager: input.manager || null } });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'BRANCH_CREATED', details: `Created branch: ${b.name}` } });
       return { ...b, createdAt: b.createdAt.toISOString() };
     },
 
-    updateBranch: async (_: any, { id, ...data }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
-      const b = await prisma.branch.update({ where: { id }, data: { ...data, address: data.address || null, phone: data.phone || null, manager: data.manager || null } });
+    updateBranch: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.BRANCH_MANAGE);
+      const { id, ...input } = validate(UpdateBranchSchema, args);
+      const b = await prisma.branch.update({ where: { id }, data: { ...input, address: input.address || null, phone: input.phone || null, manager: input.manager || null } });
       return { ...b, createdAt: b.createdAt.toISOString() };
     },
 
     deleteBranch: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN');
+      requirePermission(user, PERMISSIONS.BRANCH_MANAGE);
       const b = await prisma.branch.findUnique({ where: { id } });
       if (!b) throw new Error('Branch not found');
       await prisma.branch.delete({ where: { id } });
@@ -1988,7 +2161,7 @@ export const resolvers = {
     // ── TraditionalItem mutations ──────────────────────────────────────────
 
     createTraditionalItem: async (_: any, args: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.PRODUCT_CREATE);
       const item = await prisma.traditionalItem.create({
         data: {
           name:          args.name,
@@ -2011,7 +2184,7 @@ export const resolvers = {
     },
 
     updateTraditionalItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.PRODUCT_UPDATE);
       const data: any = { ...args };
       if ('imageUrl'    in data) data.imageUrl    = data.imageUrl    || null;
       if ('description' in data) data.description = data.description || null;
@@ -2024,7 +2197,7 @@ export const resolvers = {
     },
 
     deleteTraditionalItem: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.PRODUCT_DELETE);
       const item = await prisma.traditionalItem.findUnique({ where: { id } });
       if (!item) throw new Error('Item not found');
       await prisma.traditionalItem.delete({ where: { id } });
@@ -2033,7 +2206,7 @@ export const resolvers = {
     },
 
     adjustTraditionalStock: async (_: any, { id, quantity, type, notes }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.INVENTORY_ADJUST);
       const item = await prisma.traditionalItem.findUnique({ where: { id } });
       if (!item) throw new Error('Item not found');
       let newStock = item.stock;
@@ -2048,35 +2221,36 @@ export const resolvers = {
     // ── Organization mutations ─────────────────────────────────────────────────────
 
     createOrganization: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
+      const input = validate(CreateOrganizationSchema, args);
       return prisma.organization.create({
         data: {
-          name: args.name,
-          code: args.code,
-          type: args.type,
-          description: args.description || null,
-          address: args.address || null,
-          phone: args.phone || null,
-          email: args.email || null,
-          website: args.website || null,
+          name: input.name,
+          code: input.code,
+          type: input.type,
+          description: input.description || null,
+          address: input.address || null,
+          phone: input.phone || null,
+          email: input.email || null,
+          website: input.website || null,
         },
       });
     },
     updateOrganization: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
       return prisma.organization.update({
         where: { id },
         data: args,
       });
     },
     deleteOrganization: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage', ['ADMIN']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
       await prisma.organization.delete({ where: { id } });
       return true;
     },
 
     createOrganizationUnit: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
       return prisma.organizationUnit.create({
         data: {
           name: args.name,
@@ -2092,20 +2266,20 @@ export const resolvers = {
       });
     },
     updateOrganizationUnit: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
       return prisma.organizationUnit.update({
         where: { id },
         data: args,
       });
     },
     deleteOrganizationUnit: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'organization.manage', ['ADMIN']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
       await prisma.organizationUnit.delete({ where: { id } });
       return true;
     },
 
     createDepartment: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'department.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
       return prisma.department.create({
         data: {
           name: args.name,
@@ -2118,20 +2292,20 @@ export const resolvers = {
       });
     },
     updateDepartment: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'department.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
       return prisma.department.update({
         where: { id },
         data: args,
       });
     },
     deleteDepartment: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'department.manage', ['ADMIN']);
+      requirePermission(user, PERMISSIONS.ORG_MANAGE);
       await prisma.department.delete({ where: { id } });
       return true;
     },
 
     createWarehouse: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       return prisma.warehouse.create({
         data: {
           name: args.name,
@@ -2146,20 +2320,20 @@ export const resolvers = {
       });
     },
     updateWarehouse: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       return prisma.warehouse.update({
         where: { id },
         data: args,
       });
     },
     deleteWarehouse: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage', ['ADMIN']);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       await prisma.warehouse.delete({ where: { id } });
       return true;
     },
 
     createWarehouseLocation: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       return prisma.warehouseLocation.create({
         data: {
           name: args.name,
@@ -2171,14 +2345,14 @@ export const resolvers = {
       });
     },
     updateWarehouseLocation: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       return prisma.warehouseLocation.update({
         where: { id },
         data: args,
       });
     },
     deleteWarehouseLocation: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'warehouse.manage', ['ADMIN']);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       await prisma.warehouseLocation.delete({ where: { id } });
       return true;
     },
@@ -2186,7 +2360,7 @@ export const resolvers = {
     // ── RBAC mutations ─────────────────────────────────────────────────────────────
 
     createPermission: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'role.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.permission.create({
         data: {
           name: args.name,
@@ -2198,20 +2372,20 @@ export const resolvers = {
       });
     },
     updatePermission: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'role.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.permission.update({
         where: { id },
         data: args,
       });
     },
     deletePermission: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'role.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       await prisma.permission.delete({ where: { id } });
       return true;
     },
 
     createRole: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'role.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.role.create({
         data: {
           name: args.name,
@@ -2222,14 +2396,14 @@ export const resolvers = {
       });
     },
     updateRole: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'role.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.role.update({
         where: { id },
         data: args,
       });
     },
     deleteRole: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'role.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       const role = await prisma.role.findUnique({ where: { id } });
       if (role?.isSystem) throw new Error('Cannot delete system roles');
       await prisma.role.delete({ where: { id } });
@@ -2237,14 +2411,14 @@ export const resolvers = {
     },
 
     assignPermissionToRole: async (_: any, { roleId, permissionId }: any, { prisma, user }: any) => {
-      requirePermission(user, 'role.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.rolePermission.create({
         data: { roleId, permissionId },
         include: { role: true, permission: true },
       });
     },
     removePermissionFromRole: async (_: any, { roleId, permissionId }: any, { prisma, user }: any) => {
-      requirePermission(user, 'role.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       await prisma.rolePermission.deleteMany({
         where: { roleId, permissionId },
       });
@@ -2252,14 +2426,14 @@ export const resolvers = {
     },
 
     assignRoleToUser: async (_: any, { userId, roleId }: any, { prisma, user }: any) => {
-      requirePermission(user, 'user.manage');
+      requirePermission(user, PERMISSIONS.USER_UPDATE);
       return prisma.userRole.create({
         data: { userId, roleId, assignedBy: user.id },
         include: { user: true, role: true },
       });
     },
     removeRoleFromUser: async (_: any, { userId, roleId }: any, { prisma, user }: any) => {
-      requirePermission(user, 'user.manage');
+      requirePermission(user, PERMISSIONS.USER_UPDATE);
       await prisma.userRole.deleteMany({
         where: { userId, roleId },
       });
@@ -2267,7 +2441,7 @@ export const resolvers = {
     },
 
     assignUserToOrganization: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'user.manage');
+      requirePermission(user, PERMISSIONS.USER_UPDATE);
       return prisma.userOrganization.create({
         data: {
           userId: args.userId,
@@ -2282,7 +2456,7 @@ export const resolvers = {
       });
     },
     updateUserOrganization: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'user.manage');
+      requirePermission(user, PERMISSIONS.USER_UPDATE);
       return prisma.userOrganization.update({
         where: { id },
         data: args,
@@ -2290,7 +2464,7 @@ export const resolvers = {
       });
     },
     removeUserFromOrganization: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'user.manage');
+      requirePermission(user, PERMISSIONS.USER_UPDATE);
       await prisma.userOrganization.delete({ where: { id } });
       return true;
     },
@@ -2298,7 +2472,7 @@ export const resolvers = {
     // Enhanced Inventory mutations (Phase 3)
 
     createItemBatch: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.create');
+      requirePermission(user, PERMISSIONS.STOCK_IN);
       return prisma.itemBatch.create({
         data: {
           productId: args.productId,
@@ -2316,7 +2490,7 @@ export const resolvers = {
       });
     },
     updateItemBatch: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.update');
+      requirePermission(user, PERMISSIONS.INVENTORY_ADJUST);
       return prisma.itemBatch.update({
         where: { id },
         data: args,
@@ -2324,13 +2498,13 @@ export const resolvers = {
       });
     },
     deleteItemBatch: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.delete');
+      requirePermission(user, PERMISSIONS.INVENTORY_ADJUST);
       await prisma.itemBatch.delete({ where: { id } });
       return true;
     },
 
     createSerialNumber: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.create');
+      requirePermission(user, PERMISSIONS.STOCK_IN);
       return prisma.serialNumber.create({
         data: {
           productId: args.productId,
@@ -2343,7 +2517,7 @@ export const resolvers = {
       });
     },
     updateSerialNumber: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.update');
+      requirePermission(user, PERMISSIONS.INVENTORY_ADJUST);
       return prisma.serialNumber.update({
         where: { id },
         data: args,
@@ -2351,12 +2525,12 @@ export const resolvers = {
       });
     },
     deleteSerialNumber: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.delete');
+      requirePermission(user, PERMISSIONS.INVENTORY_ADJUST);
       await prisma.serialNumber.delete({ where: { id } });
       return true;
     },
     assignSerialNumber: async (_: any, { id, assignedTo }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.update');
+      requirePermission(user, PERMISSIONS.INVENTORY_ADJUST);
       return prisma.serialNumber.update({
         where: { id },
         data: { assignedTo, assignedAt: new Date(), status: 'ASSIGNED' },
@@ -2365,7 +2539,7 @@ export const resolvers = {
     },
 
     createStockTransfer: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.transfer');
+      requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
       const transferNumber = `ST-${Date.now()}`;
       return prisma.stockTransfer.create({
         data: {
@@ -2379,7 +2553,7 @@ export const resolvers = {
       });
     },
     addStockTransferItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.transfer');
+      requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
       return prisma.stockTransferItem.create({
         data: {
           stockTransferId: args.stockTransferId,
@@ -2391,7 +2565,7 @@ export const resolvers = {
       });
     },
     updateStockTransferItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.transfer');
+      requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
       return prisma.stockTransferItem.update({
         where: { id },
         data: args,
@@ -2399,7 +2573,7 @@ export const resolvers = {
       });
     },
     approveStockTransfer: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.approve');
+      requirePermission(user, PERMISSIONS.INVENTORY_AUDIT);
       return prisma.stockTransfer.update({
         where: { id },
         data: {
@@ -2411,7 +2585,7 @@ export const resolvers = {
       });
     },
     dispatchStockTransfer: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.transfer');
+      requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
       const transfer = await prisma.stockTransfer.findUnique({
         where: { id },
         include: { items: true },
@@ -2433,7 +2607,7 @@ export const resolvers = {
       });
     },
     receiveStockTransfer: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.transfer');
+      requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
       const transfer = await prisma.stockTransfer.findUnique({
         where: { id },
         include: { items: true },
@@ -2464,7 +2638,7 @@ export const resolvers = {
       });
     },
     cancelStockTransfer: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.transfer');
+      requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
       await prisma.stockTransfer.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -2473,7 +2647,7 @@ export const resolvers = {
     },
 
     createInventoryAudit: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.audit');
+      requirePermission(user, PERMISSIONS.INVENTORY_AUDIT);
       const auditNumber = `AUD-${Date.now()}`;
       return prisma.inventoryAudit.create({
         data: {
@@ -2488,7 +2662,7 @@ export const resolvers = {
       });
     },
     addInventoryAuditItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.audit');
+      requirePermission(user, PERMISSIONS.INVENTORY_AUDIT);
       const variance = args.actualQuantity - args.expectedQuantity;
       return prisma.inventoryAuditItem.create({
         data: {
@@ -2503,7 +2677,7 @@ export const resolvers = {
       });
     },
     resolveInventoryAuditItem: async (_: any, { id, resolution }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.audit');
+      requirePermission(user, PERMISSIONS.INVENTORY_AUDIT);
       return prisma.inventoryAuditItem.update({
         where: { id },
         data: {
@@ -2516,7 +2690,7 @@ export const resolvers = {
       });
     },
     completeInventoryAudit: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.audit');
+      requirePermission(user, PERMISSIONS.INVENTORY_AUDIT);
       return prisma.inventoryAudit.update({
         where: { id },
         data: { status: 'COMPLETED' },
@@ -2524,7 +2698,7 @@ export const resolvers = {
       });
     },
     cancelInventoryAudit: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'inventory.audit');
+      requirePermission(user, PERMISSIONS.INVENTORY_AUDIT);
       await prisma.inventoryAudit.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -2535,7 +2709,7 @@ export const resolvers = {
     // Procurement mutations (Phase 4 & 5)
 
     createProcurementRequest: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement:create', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
 
       const procurementService = createProcurementService(prisma);
       const result = await procurementService.createProcurementRequest({
@@ -2559,7 +2733,7 @@ export const resolvers = {
     },
 
     updateProcurementRequest: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement:create', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       const data: any = { ...args };
       if (args.requiredDate) data.requiredDate = new Date(args.requiredDate);
       if (args.status) {
@@ -2579,7 +2753,7 @@ export const resolvers = {
       });
     },
     addProcurementRequestItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.create');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       const estimatedTotal = args.quantity * args.estimatedUnitCost;
       const item = await prisma.procurementRequestItem.create({
         data: {
@@ -2610,7 +2784,7 @@ export const resolvers = {
       return item;
     },
     updateProcurementRequestItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.update');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const data: any = { ...args };
       if (args.quantity !== undefined || args.estimatedUnitCost !== undefined) {
         const item = await prisma.procurementRequestItem.findUnique({ where: { id } });
@@ -2638,7 +2812,7 @@ export const resolvers = {
       return updated;
     },
     deleteProcurementRequestItem: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.delete');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const item = await prisma.procurementRequestItem.findUnique({ where: { id } });
       await prisma.procurementRequestItem.delete({ where: { id } });
       
@@ -2658,7 +2832,7 @@ export const resolvers = {
       return true;
     },
     submitProcurementRequest: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement:approve', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
 
       const procurementService = createProcurementService(prisma);
       const result = await procurementService.submitProcurementRequest(id, user.id);
@@ -2670,7 +2844,7 @@ export const resolvers = {
       return (result as any).request;
     },
     approveProcurementRequest: async (_: any, { id, comments }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement:approve', ['ADMIN', 'MANAGER', 'PURCHASING_MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
 
       const procurementService = createProcurementService(prisma);
       const result = await procurementService.approveProcurementRequest(id, user.id, comments);
@@ -2683,7 +2857,7 @@ export const resolvers = {
     },
 
     receiveGoods: async (_: any, { purchaseOrderId, items, notes, warehouseId }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement:receive', ['ADMIN', 'MANAGER', 'WAREHOUSE_MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_RECEIVE);
 
       const procurementService = createProcurementService(prisma);
       const result = await procurementService.receiveGoods({
@@ -2707,7 +2881,7 @@ export const resolvers = {
 
     // CSV Import mutations
     previewProductImport: async (_: any, { csvContent }: any, { prisma, user }: any) => {
-      requirePermission(user, 'product:create', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PRODUCT_IMPORT);
       
       const csvService = new CSVImportService(prisma);
       const preview = await csvService.previewProductImport(csvContent, user.id);
@@ -2716,7 +2890,7 @@ export const resolvers = {
     },
 
     importProducts: async (_: any, { csvContent }: any, { prisma, user }: any) => {
-      requirePermission(user, 'product:create', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PRODUCT_IMPORT);
       
       const csvService = new CSVImportService(prisma);
       const result = await csvService.importProducts(csvContent, user.id);
@@ -2729,7 +2903,7 @@ export const resolvers = {
     },
 
     importPurchaseOrdersCSV: async (_: any, { csvContent }: any, { prisma, user }: any) => {
-      requirePermission(user, 'purchase:create', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       
       try {
         const rows = csvContent.split('\n').filter(line => line.trim());
@@ -2815,7 +2989,7 @@ export const resolvers = {
     },
 
     rejectProcurementRequest: async (_: any, { id, comments }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.approve');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.procurementRequest.update({
         where: { id },
         data: { status: 'REJECTED' },
@@ -2823,7 +2997,7 @@ export const resolvers = {
       });
     },
     cancelProcurementRequest: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.delete');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       await prisma.procurementRequest.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -2832,7 +3006,7 @@ export const resolvers = {
     },
 
     createTender: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.create', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       if (!args.projectName?.trim() || !args.procurementCategory?.trim() || !args.submissionDeadline) {
         throw new Error('Project name, procurement category, and submission deadline are required');
       }
@@ -2858,7 +3032,7 @@ export const resolvers = {
       });
     },
     updateTender: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const data: any = { ...args };
       if (args.submissionDeadline) data.submissionDeadline = new Date(args.submissionDeadline);
       return prisma.tender.update({
@@ -2868,7 +3042,7 @@ export const resolvers = {
       });
     },
     addTenderItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.create', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       return prisma.tenderItem.create({
         data: {
           tenderId: args.tenderId,
@@ -2881,7 +3055,7 @@ export const resolvers = {
       });
     },
     updateTenderItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.tenderItem.update({
         where: { id },
         data: args,
@@ -2889,12 +3063,12 @@ export const resolvers = {
       });
     },
     deleteTenderItem: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       await prisma.tenderItem.delete({ where: { id } });
       return true;
     },
     addTechnicalRequirement: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.technicalRequirement.create({
         data: {
           tenderId: args.tenderId,
@@ -2909,7 +3083,7 @@ export const resolvers = {
       });
     },
     updateTechnicalRequirement: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.technicalRequirement.update({
         where: { id },
         data: args,
@@ -2917,12 +3091,12 @@ export const resolvers = {
       });
     },
     deleteTechnicalRequirement: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       await prisma.technicalRequirement.delete({ where: { id } });
       return true;
     },
     publishTender: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.tender.update({
         where: { id },
         data: { status: 'PUBLISHED' },
@@ -2930,7 +3104,7 @@ export const resolvers = {
       });
     },
     closeTender: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.tender.update({
         where: { id },
         data: { status: 'CLOSED' },
@@ -2938,7 +3112,7 @@ export const resolvers = {
       });
     },
     cancelTender: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       await prisma.tender.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -2947,7 +3121,7 @@ export const resolvers = {
     },
 
     createBid: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const bidNumber = `B-${Date.now()}`;
       return prisma.bid.create({
         data: {
@@ -2964,7 +3138,7 @@ export const resolvers = {
       });
     },
     addBidItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const totalPrice = args.quantity * args.unitPrice;
       return prisma.bidItem.create({
         data: {
@@ -2980,7 +3154,7 @@ export const resolvers = {
       });
     },
     updateBidItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage', ['ADMIN', 'MANAGER']);
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const data: any = { ...args };
       if (args.quantity !== undefined || args.unitPrice !== undefined) {
         const item = await prisma.bidItem.findUnique({ where: { id } });
@@ -2995,12 +3169,12 @@ export const resolvers = {
       });
     },
     deleteBidItem: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       await prisma.bidItem.delete({ where: { id } });
       return true;
     },
     submitBid: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.bid.update({
         where: { id },
         data: { status: 'SUBMITTED' },
@@ -3008,7 +3182,7 @@ export const resolvers = {
       });
     },
     withdrawBid: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       await prisma.bid.update({
         where: { id },
         data: { status: 'WITHDRAWN' },
@@ -3016,7 +3190,7 @@ export const resolvers = {
       return true;
     },
     qualifyBid: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.evaluate');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.bid.update({
         where: { id },
         data: { status: 'QUALIFIED' },
@@ -3024,7 +3198,7 @@ export const resolvers = {
       });
     },
     disqualifyBid: async (_: any, { id, reason }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.evaluate');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.bid.update({
         where: { id },
         data: { status: 'DISQUALIFIED', notes: reason },
@@ -3033,7 +3207,7 @@ export const resolvers = {
     },
 
     evaluateTechnicalRequirement: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.evaluate');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.technicalEvaluation.create({
         data: {
           bidId: args.bidId,
@@ -3048,7 +3222,7 @@ export const resolvers = {
       });
     },
     evaluateFinancial: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.evaluate');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const bid = await prisma.bid.findUnique({ where: { id: args.bidId } });
       const totalEvaluatedPrice = (bid?.totalPrice || 0) + (args.deliveryCost || 0) + (args.taxes || 0);
       return prisma.financialEvaluation.upsert({
@@ -3075,7 +3249,7 @@ export const resolvers = {
       });
     },
     selectBid: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'tender.award');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const bid = await prisma.bid.findUnique({ where: { id }, include: { tender: true } });
       
       // Update tender status
@@ -3094,7 +3268,7 @@ export const resolvers = {
     },
 
     createContract: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       if (!args.supplierId || !args.startDate || !args.endDate || args.contractValue === undefined || args.contractValue === null || args.contractValue <= 0) {
         throw new Error('Supplier, valid start and end dates, and a positive contract value are required');
       }
@@ -3123,7 +3297,7 @@ export const resolvers = {
       });
     },
     updateContract: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       const data: any = { ...args };
       if (args.endDate) data.endDate = new Date(args.endDate);
       return prisma.contract.update({
@@ -3133,7 +3307,7 @@ export const resolvers = {
       });
     },
     addContractItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       const totalPrice = args.quantity * args.unitPrice;
       return prisma.contractItem.create({
         data: {
@@ -3148,7 +3322,7 @@ export const resolvers = {
       });
     },
     updateContractItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       const data: any = { ...args };
       if (args.quantity !== undefined || args.unitPrice !== undefined) {
         const item = await prisma.contractItem.findUnique({ where: { id } });
@@ -3163,12 +3337,12 @@ export const resolvers = {
       });
     },
     deleteContractItem: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       await prisma.contractItem.delete({ where: { id } });
       return true;
     },
     activateContract: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       return prisma.contract.update({
         where: { id },
         data: { status: 'ACTIVE' },
@@ -3176,7 +3350,7 @@ export const resolvers = {
       });
     },
     terminateContract: async (_: any, { id, reason }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       return prisma.contract.update({
         where: { id },
         data: { status: 'TERMINATED', description: reason },
@@ -3185,7 +3359,7 @@ export const resolvers = {
     },
 
     createGoodsReceipt: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       const receiptNumber = `GR-${Date.now()}`;
       return prisma.goodsReceipt.create({
         data: {
@@ -3202,7 +3376,7 @@ export const resolvers = {
       });
     },
     addGoodsReceiptItem: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       return prisma.goodsReceiptItem.create({
         data: {
           goodsReceiptId: args.goodsReceiptId,
@@ -3220,7 +3394,7 @@ export const resolvers = {
       });
     },
     updateGoodsReceiptItem: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       return prisma.goodsReceiptItem.update({
         where: { id },
         data: args,
@@ -3228,7 +3402,7 @@ export const resolvers = {
       });
     },
     inspectGoodsReceipt: async (_: any, { id, inspectedBy, inspectionDate }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       return prisma.goodsReceipt.update({
         where: { id },
         data: {
@@ -3240,7 +3414,7 @@ export const resolvers = {
       });
     },
     acceptGoodsReceipt: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       const receipt = await prisma.goodsReceipt.findUnique({
         where: { id },
         include: { items: true },
@@ -3261,7 +3435,7 @@ export const resolvers = {
       });
     },
     rejectGoodsReceipt: async (_: any, { id, reason }: any, { prisma, user }: any) => {
-      requirePermission(user, 'procurement.manage');
+      requirePermission(user, PERMISSIONS.PURCHASE_CREATE);
       return prisma.goodsReceipt.update({
         where: { id },
         data: { status: 'REJECTED', notes: reason },
@@ -3272,7 +3446,7 @@ export const resolvers = {
     // Asset Management mutations (Phase 7)
 
     createAsset: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.manage');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const data: any = {
         assetNumber: args.assetNumber,
         serialNumber: args.serialNumber,
@@ -3297,7 +3471,7 @@ export const resolvers = {
       });
     },
     updateAsset: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.manage');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const data: any = { ...args };
       if (args.warrantyExpiry) data.warrantyExpiry = new Date(args.warrantyExpiry);
       return prisma.asset.update({
@@ -3307,12 +3481,12 @@ export const resolvers = {
       });
     },
     deleteAsset: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.manage');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       await prisma.asset.delete({ where: { id } });
       return true;
     },
     assignAsset: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.assign');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const assignment = await prisma.assetAssignment.create({
         data: {
           assetId: args.assetId,
@@ -3335,7 +3509,7 @@ export const resolvers = {
       return assignment;
     },
     returnAsset: async (_: any, { id, conditionAfter, notes }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.assign');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const assignment = await prisma.assetAssignment.update({
         where: { id },
         data: {
@@ -3355,7 +3529,7 @@ export const resolvers = {
       return assignment;
     },
     transferAsset: async (_: any, { id, newLocation, newDepartmentId, notes }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.assign');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const assignment = await prisma.assetAssignment.update({
         where: { id },
         data: {
@@ -3371,7 +3545,7 @@ export const resolvers = {
     },
 
     createAssetMaintenance: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.maintain');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const data: any = {
         assetId: args.assetId,
         maintenanceType: args.maintenanceType,
@@ -3392,7 +3566,7 @@ export const resolvers = {
       });
     },
     updateAssetMaintenance: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.maintain');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const data: any = { ...args };
       if (args.completedDate) data.completedDate = new Date(args.completedDate);
       if (args.nextMaintenanceDate) data.nextMaintenanceDate = new Date(args.nextMaintenanceDate);
@@ -3403,7 +3577,7 @@ export const resolvers = {
       });
     },
     completeAssetMaintenance: async (_: any, { id, notes }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.maintain');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const maintenance = await prisma.assetMaintenance.update({
         where: { id },
         data: {
@@ -3423,7 +3597,7 @@ export const resolvers = {
       return maintenance;
     },
     cancelAssetMaintenance: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.maintain');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       await prisma.assetMaintenance.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -3432,7 +3606,7 @@ export const resolvers = {
     },
 
     createAssetDisposal: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.dispose');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       return prisma.assetDisposal.create({
         data: {
           assetId: args.assetId,
@@ -3447,7 +3621,7 @@ export const resolvers = {
       });
     },
     approveAssetDisposal: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.dispose');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const disposal = await prisma.assetDisposal.update({
         where: { id },
         data: {
@@ -3466,7 +3640,7 @@ export const resolvers = {
       return disposal;
     },
     completeAssetDisposal: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.dispose');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       const disposal = await prisma.assetDisposal.update({
         where: { id },
         data: { status: 'COMPLETED' },
@@ -3482,7 +3656,7 @@ export const resolvers = {
       return disposal;
     },
     cancelAssetDisposal: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'asset.dispose');
+      requirePermission(user, PERMISSIONS.WAREHOUSE_MANAGE);
       await prisma.assetDisposal.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -3493,7 +3667,7 @@ export const resolvers = {
     // Workflow & Approval mutations (Phase 7)
 
     createWorkflow: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'audit.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.workflow.create({
         data: {
           name: args.name,
@@ -3504,7 +3678,7 @@ export const resolvers = {
       });
     },
     updateWorkflow: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'audit.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.workflow.update({
         where: { id },
         data: args,
@@ -3512,12 +3686,12 @@ export const resolvers = {
       });
     },
     deleteWorkflow: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'audit.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       await prisma.workflow.delete({ where: { id } });
       return true;
     },
     addWorkflowStep: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'audit.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.workflowStep.create({
         data: {
           workflowId: args.workflowId,
@@ -3532,7 +3706,7 @@ export const resolvers = {
       });
     },
     updateWorkflowStep: async (_: any, { id, ...args }: any, { prisma, user }: any) => {
-      requirePermission(user, 'audit.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       return prisma.workflowStep.update({
         where: { id },
         data: args,
@@ -3540,12 +3714,12 @@ export const resolvers = {
       });
     },
     deleteWorkflowStep: async (_: any, { id }: any, { prisma, user }: any) => {
-      requirePermission(user, 'audit.manage');
+      requirePermission(user, PERMISSIONS.ROLE_MANAGE);
       await prisma.workflowStep.delete({ where: { id } });
       return true;
     },
     createApproval: async (_: any, args: any, { prisma, user }: any) => {
-      requirePermission(user, 'approval.review');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       return prisma.approval.create({
         data: {
           entityType: args.entityType,
@@ -3557,7 +3731,7 @@ export const resolvers = {
       });
     },
     approveRequest: async (_: any, { approvalId, comments }: any, { prisma, user }: any) => {
-      requirePermission(user, 'approval.approve');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const approval = await prisma.approval.update({
         where: { id: approvalId },
         data: {
@@ -3575,7 +3749,7 @@ export const resolvers = {
       return approval;
     },
     rejectRequest: async (_: any, { approvalId, comments }: any, { prisma, user }: any) => {
-      requirePermission(user, 'approval.approve');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const approval = await prisma.approval.update({
         where: { id: approvalId },
         data: {
@@ -3590,7 +3764,7 @@ export const resolvers = {
       return approval;
     },
     returnRequest: async (_: any, { approvalId, comments }: any, { prisma, user }: any) => {
-      requirePermission(user, 'approval.approve');
+      requirePermission(user, PERMISSIONS.PURCHASE_UPDATE);
       const approval = await prisma.approval.update({
         where: { id: approvalId },
         data: {
@@ -3608,7 +3782,7 @@ export const resolvers = {
     // Audit & Risk mutations (Phase 9)
 
     createActivityLog: async (_: any, args: any, { prisma, user, requestIp }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.AUDIT_LOG_VIEW);
       return prisma.activityLog.create({
         data: {
           userId: user.id,
@@ -3625,7 +3799,7 @@ export const resolvers = {
       });
     },
     resolveRiskIndicator: async (_: any, { id, resolvedBy, resolution }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       return prisma.riskIndicator.update({
         where: { id },
         data: {
@@ -3637,7 +3811,7 @@ export const resolvers = {
       });
     },
     ignoreRiskIndicator: async (_: any, { id, reason }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       return prisma.riskIndicator.update({
         where: { id },
         data: {
@@ -3647,7 +3821,7 @@ export const resolvers = {
       });
     },
     createRiskIndicator: async (_: any, args: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       return prisma.riskIndicator.create({
         data: {
           entityType: args.entityType,
@@ -3661,7 +3835,7 @@ export const resolvers = {
       });
     },
     detectRisks: async (_: any, { entityType }: any, { prisma, user }: any) => {
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW);
       const detectedRisks = [];
       
       // Stock out risk detection
@@ -3819,7 +3993,7 @@ export const resolvers = {
     },
     createNotification: async (_: any, args: any, { prisma, user }: any) => {
       requireAuth(user);
-      requireRole(user, 'ADMIN', 'MANAGER');
+      requirePermission(user, PERMISSIONS.REPORT_VIEW); // Only ADMIN/MANAGER can create system notifications
       
       return prisma.notification.create({
         data: {

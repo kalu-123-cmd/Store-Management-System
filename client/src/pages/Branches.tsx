@@ -93,7 +93,7 @@ export default function Branches() {
   const [deleteBranch] = useMutation(DELETE_BRANCH);
   const { success, error: toastError } = useToast();
   const { isAdmin } = useRole();
-  const { t } = useLangContext();
+  const { t: _t } = useLangContext();
 
   const branches: any[] = data?.branches || [];
   const active   = branches.filter(b => b.isActive).length;

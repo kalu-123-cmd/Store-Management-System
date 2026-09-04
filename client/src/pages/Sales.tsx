@@ -27,8 +27,26 @@ const GET_SALES_DATA = gql`
 `;
 
 const CREATE_SALE = gql`
-  mutation CreateSale($customerId: String, $items: [CreateSaleItemInput!]!) {
-    createSale(customerId: $customerId, items: $items) { id invoiceNo totalAmount }
+  mutation CreateSale(
+    $customerId: String
+    $items: [CreateSaleItemInput!]!
+    $paymentMethod: String
+    $paymentAmount: Float
+    $notes: String
+    $idempotencyKey: String
+  ) {
+    createSale(
+      customerId: $customerId
+      items: $items
+      paymentMethod: $paymentMethod
+      paymentAmount: $paymentAmount
+      notes: $notes
+      idempotencyKey: $idempotencyKey
+    ) {
+      id invoiceNo totalAmount subtotal vatAmount paymentStatus
+      customer { id name }
+      items { id quantity price costPrice product { name sku } }
+    }
   }
 `;
 
@@ -226,7 +244,6 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
   const [cart, setCart]           = useState<CartItem[]>([]);
   const [customerId, setCustomerId] = useState('');
   const [search, setSearch]       = useState('');
-  const [barcodeBuffer, setBarcodeBuffer] = useState('');
   const [createSale, { loading }] = useMutation(CREATE_SALE);
   const { success, error: toastError } = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -245,7 +262,6 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
         );
         if (match && match.stock > 0) {
           addToCart(match);
-          setBarcodeBuffer('');
         }
         buf = '';
         clearTimeout(timer);
@@ -290,9 +306,19 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+    // Generate a per-checkout idempotency key to prevent duplicate sales on retry
+    const idempotencyKey = crypto.randomUUID();
     try {
+      const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const totalWithVAT = Math.round(subtotal * 1.15 * 100) / 100;
       const result = await createSale({
-        variables: { customerId: customerId || null, items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })) },
+        variables: {
+          customerId:     customerId || null,
+          items:          cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
+          paymentMethod:  'CASH',
+          paymentAmount:  totalWithVAT,
+          idempotencyKey,
+        },
       });
       success('Sale completed!', `Invoice: ${result.data.createSale.invoiceNo} — ${fmt(result.data.createSale.totalAmount)}`);
       setCart([]); setCustomerId(''); refetch(); onClose();

@@ -24,6 +24,7 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react/only-export-components -- hook exported alongside provider intentionally
 export function useLangContext() {
   return useContext(LangContext);
 }

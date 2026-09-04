@@ -14,6 +14,37 @@ import { LangProvider } from './lib/LangContext.tsx'
 import PWAInstallPrompt from './components/PWAInstallPrompt.tsx'
 import './i18n/config' // Initialize i18next
 
+// ── Service worker cleanup in dev ─────────────────────────────────────────────
+if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+  void navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => void registration.unregister())
+  })
+  void caches.keys().then((keys) => {
+    keys.filter((key) => key.includes('workbox') || key.includes('graphql-cache'))
+      .forEach((key) => void caches.delete(key))
+  })
+}
+
+// ── JWT expiry check on startup ───────────────────────────────────────────────
+// Parse the JWT without verifying signature (browser cannot verify — server does).
+// This only prevents sending an obviously expired token unnecessarily.
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]!));
+    if (typeof payload?.exp !== 'number') return false;
+    return Date.now() >= payload.exp * 1000;
+  } catch {
+    return false; // malformed token — let the server reject it
+  }
+}
+
+const storedToken = localStorage.getItem('token');
+if (storedToken && isTokenExpired(storedToken)) {
+  // Token has expired — clear auth state so user is redirected to login
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+}
+
 // ── HTTP link ────────────────────────────────────────────────────────────────
 
 const httpLink = createHttpLink({

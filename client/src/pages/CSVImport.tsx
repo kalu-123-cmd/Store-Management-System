@@ -123,7 +123,7 @@ function readFileAsCSV(file: File): Promise<string> {
           const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
           const csv = XLSX.utils.sheet_to_csv(firstSheet);
           resolve(csv);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse Excel file'));
         }
       };

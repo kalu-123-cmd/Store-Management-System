@@ -73,7 +73,7 @@ const ic = 'w-full px-3 py-2 bg-background border border-border rounded-lg text-
 const lbl = 'block text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide';
 
 const ORG_TYPES   = ['MINISTRY','AGENCY','NGO','UNIVERSITY','HOSPITAL','COMPANY','OTHER'];
-const UNIT_TYPES  = ['REGION','ZONE','DISTRICT','DEPARTMENT','WAREHOUSE'];
+const _UNIT_TYPES = ['REGION','ZONE','DISTRICT','DEPARTMENT','WAREHOUSE']; void _UNIT_TYPES;
 const WH_TYPES    = ['CENTRAL','REGIONAL','DEPARTMENTAL'];
 
 function Badge({ active }: { active: boolean }) {
@@ -143,6 +143,8 @@ function OrgModal({ open, onClose, refetch, editing }: any) {
       description:editing.description||'', address:editing.address||'',
       phone:editing.phone||'', email:editing.email||'', website:editing.website||'' });
     else setF(blank);
+  // blank is a stable inline constant — intentionally excluded from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, open]);
 
   const set = (k: string, v: string) => setF(p => ({ ...p, [k]: v }));
@@ -196,6 +198,8 @@ function DeptModal({ open, onClose, refetch, editing, units }: any) {
       headOfDepartment:editing.headOfDepartment||'',
       budgetCode:editing.budgetCode||'', description:editing.description||'' });
     else setF(blank);
+  // blank is a stable inline constant — intentionally excluded from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, open]);
 
   const set = (k: string, v: string) => setF(p => ({ ...p, [k]: v }));
@@ -244,6 +248,8 @@ function WHModal({ open, onClose, refetch, editing, units }: any) {
       address:editing.address||'', phone:editing.phone||'',
       manager:editing.manager||'', capacity:editing.capacity?.toString()||'' });
     else setF(blank);
+  // blank is a stable inline constant — intentionally excluded from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, open]);
 
   const set = (k: string, v: string) => setF(p => ({ ...p, [k]: v }));
@@ -285,7 +291,7 @@ function WHModal({ open, onClose, refetch, editing, units }: any) {
 }
 
 // ── Organizations Tab ─────────────────────────────────────────────────────────
-function OrgsTab({ orgs, refetch, onNew }: any) {
+function OrgsTab({ orgs, refetch, onNew: _onNew }: any) {
   const { toast } = useToast();
   const [editing, setEditing] = useState<any>(null);
   const [deleteOrg] = useMutation(DELETE_ORG);

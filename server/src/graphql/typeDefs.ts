@@ -86,6 +86,30 @@ export const typeDefs = `#graphql
     createdAt: String!
   }
 
+  # Inventory Ledger — append-only movement log
+  type InventoryMovement {
+    id:            ID!
+    productId:     String!
+    product:       Product
+    movementType:  String!
+    quantity:      Int!
+    previousStock: Int!
+    newStock:      Int!
+    referenceType: String
+    referenceId:   String
+    batchId:       String
+    unitCost:      Float!
+    userId:        String!
+    notes:         String
+    createdAt:     String!
+  }
+
+  type InventoryMovementPage {
+    movements:   [InventoryMovement!]!
+    total:       Int!
+    hasMore:     Boolean!
+  }
+
   type SaleItem {
     id: ID!
     saleId: String!
@@ -93,6 +117,7 @@ export const typeDefs = `#graphql
     product: Product
     quantity: Int!
     price: Float!
+    costPrice: Float!
   }
 
   type SaleReturn {
@@ -1220,6 +1245,19 @@ export const typeDefs = `#graphql
 
     transactions(productId: String): [Transaction!]!
 
+    # Inventory Ledger queries
+    inventoryMovements(
+      productId:    String
+      movementType: String
+      userId:       String
+      startDate:    String
+      endDate:      String
+      limit:        Int
+      offset:       Int
+    ): InventoryMovementPage!
+
+    productMovements(productId: ID!, limit: Int, offset: Int): InventoryMovementPage!
+
     activityLogs: [ActivityLog!]!
 
     dashboardStats: DashboardStats!
@@ -1408,6 +1446,7 @@ export const typeDefs = `#graphql
       paymentAmount: Float
       branchId: String
       notes: String
+      idempotencyKey: String
     ): Sale!
 
     returnSale(saleId: ID!, reason: String, items: [ReturnItemInput!]): SaleReturn!

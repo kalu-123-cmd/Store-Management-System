@@ -7,7 +7,7 @@
  *   <h2>{t('dashboard', lang)}</h2>
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export type Lang = 'en' | 'am' | 'ti' | 'om' | 'so' | 'aa';
 

@@ -40,7 +40,8 @@ function BarcodeVisual({ value }: { value: string }) {
   );
 }
 
-function BarcodeLabel({ product, showPrice }: { product: any; showPrice: boolean }) {
+// BarcodeLabel is kept for future use when switching to DOM-based print approach
+function _BarcodeLabel({ product, showPrice }: { product: any; showPrice: boolean }) {
   return (
     <div className="border border-gray-300 rounded p-2 bg-white text-black w-48 shrink-0" style={{ fontFamily: 'monospace' }}>
       <p className="text-[9px] font-bold text-center truncate mb-1">{product.name}</p>
@@ -55,7 +56,7 @@ function BarcodeLabel({ product, showPrice }: { product: any; showPrice: boolean
 
 export default function BarcodePrint() {
   const { data, loading } = useQuery(GET_PRODUCTS, { fetchPolicy: 'cache-and-network' });
-  const { t } = useLangContext();
+  const { t: _t } = useLangContext();
   const [search, setSearch]         = useState('');
   const [selected, setSelected]     = useState<Set<string>>(new Set());
   const [copies, setCopies]         = useState(1);
@@ -70,7 +71,7 @@ export default function BarcodePrint() {
   const toggle = (id: string) => {
     setSelected(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
       return next;
     });
   };
@@ -118,7 +119,7 @@ export default function BarcodePrint() {
           disabled={selected.size === 0}
           className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors disabled:opacity-40"
         >
-          <Printer size={16} /> {t('print')} {selected.size > 0 ? `(${selected.size})` : ''}
+          <Printer size={16} /> {_t('print')} {selected.size > 0 ? `(${selected.size})` : ''}
         </button>
       </div>
 

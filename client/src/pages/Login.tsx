@@ -31,7 +31,7 @@ export default function Login() {
         localStorage.setItem('user', JSON.stringify(data.login.user));
         navigate('/dashboard');
       }
-    } catch (err) {
+    } catch {
       // error shown via Apollo error state below
     }
   };

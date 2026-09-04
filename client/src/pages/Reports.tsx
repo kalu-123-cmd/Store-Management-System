@@ -5,7 +5,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import { FileDown, TrendingUp, Package, DollarSign, ShoppingCart, Percent } from 'lucide-react';
+import { FileDown, TrendingUp, Package, DollarSign, Percent } from 'lucide-react';
 import { fmt, fmtCompact, fmtInt } from '../lib/currency';
 import { useToast } from '../components/Toast';
 import { useLangContext } from '../lib/LangContext';
@@ -70,7 +70,7 @@ export default function Reports() {
   const { info } = useToast();
   const { t } = useLangContext();
 
-  const { data, loading, refetch } = useQuery(GET_REPORTS, {
+  const { data, loading, refetch: _refetch } = useQuery(GET_REPORTS, {
     variables: {
       startDate: activeRange.start || undefined,
       endDate:   activeRange.end   || undefined,

@@ -87,6 +87,10 @@ export default function StockAlertBell() {
     });
   };
 
+  const toastErrorRef = useRef(toastError);
+  const warningRef = useRef(warning);
+  useEffect(() => { toastErrorRef.current = toastError; warningRef.current = warning; });
+
   const handleAlerts = useCallback((newAlerts: any[]) => {
     if (!newAlerts.length) return;
 
@@ -101,10 +105,10 @@ export default function StockAlertBell() {
 
     // Fire toasts
     outAlerts.slice(0, 3).forEach(a => {
-      toastError(t('outOfStockAlert', lang), `${a.name} (${a.sku})`);
+      toastErrorRef.current(t('outOfStockAlert', lang), `${a.name} (${a.sku})`);
     });
     if (lowAlerts.length > 0) {
-      warning(t('lowStockAlert', lang), `${lowAlerts.length} ${t('lowStock', lang)}`);
+      warningRef.current(t('lowStockAlert', lang), `${lowAlerts.length} ${t('lowStock', lang)}`);
     }
 
     setHasNew(true);

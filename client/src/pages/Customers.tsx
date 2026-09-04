@@ -3,7 +3,7 @@ import { useQuery, useMutation, gql } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Edit2, Trash2, X, Mail, Phone, ShoppingBag,
-  Search, ChevronRight, DollarSign, Receipt, Calendar,
+  Search, ChevronRight, Receipt, Calendar,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useToast } from '../components/Toast';

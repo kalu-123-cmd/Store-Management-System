@@ -77,7 +77,6 @@ model Supplier {
   goodsReceipts   GoodsReceipt[]
   productBatches  ProductBatch[]   @relation("SupplierBatches")
   importShipments ImportShipment[]
-  supplier        ProductBatch[]
   supplierPrices  SupplierPrice[]
 }
 
@@ -101,6 +100,7 @@ model Customer {
   status        String         @default("ACTIVE") // ACTIVE, SUSPENDED, BLACKLISTED
   sales         Sale[]
   creditAccount CreditAccount?
+  creditLedgerEntries CreditLedgerEntry[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -140,6 +140,7 @@ model Product {
   productBatches         ProductBatch[]
   importShipmentItems    ImportShipmentItem[]
   supplierPrices         SupplierPrice[]
+  inventoryMovements     InventoryMovement[]
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
   StockTransferOrderItem StockTransferOrderItem[]
@@ -220,7 +221,11 @@ model SaleItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
   quantity  Int
-  price     Float // Price at the time of sale
+  price     Float   // Selling price at the time of sale — immutable historical record
+  costPrice Float   @default(0) // Cost price at the time of sale — required for accurate COGS
+
+  @@index([saleId])
+  @@index([productId])
 }
 
 model SaleReturn {
@@ -1144,7 +1149,7 @@ model ProductBatch {
   batchNumber String    @unique
   expiryDate  DateTime
   quantity    Int       @default(0)
-  landedCost  Float // True landed cost including logistics
+  landedCost  Float     // True landed cost including logistics
   supplierId  String?
   supplier    Supplier? @relation("SupplierBatches", fields: [supplierId], references: [id])
   branchId    String?
@@ -1154,7 +1159,6 @@ model ProductBatch {
   updatedAt   DateTime  @updatedAt
 
   transactions Transaction[]
-  Supplier     Supplier?     @relation(fields: [supplierId], references: [id])
 
   @@index([productId])
   @@index([batchNumber])
@@ -1245,8 +1249,57 @@ model Payment {
 }
 
 // ============================================
-// ETHIOPIAN CREDIT (ብርድር) MODELS (Smart Store OS Phase 3)
+// INVENTORY MOVEMENT LEDGER (Phase 6)
+// Append-only ledger — never update, never delete.
+// Every stock change must produce a movement record.
 // ============================================
+
+model InventoryMovement {
+  id            String   @id @default(uuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  movementType  String   // STOCK_IN | STOCK_OUT | PURCHASE | SALE | CUSTOMER_RETURN | SUPPLIER_RETURN | DAMAGED | EXPIRED | ADJUSTMENT
+  quantity      Int      // Positive = in, Negative = out
+  previousStock Int      // Stock before this movement
+  newStock      Int      // Stock after this movement
+  referenceType String?  // SALE | PURCHASE_ORDER | ADJUSTMENT | RETURN | TRANSFER
+  referenceId   String?  // ID of the referenced transaction/sale/PO
+  batchId       String?  // Optional: which batch was affected
+  unitCost      Float    @default(0) // Cost at time of movement (for COGS tracking)
+  userId        String   // Who triggered the movement
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([movementType, createdAt])
+  @@index([referenceType, referenceId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================
+// CREDIT LEDGER (Phase 12)
+// Immutable ledger for customer credit transactions.
+// Balance is always derived from ledger entries.
+// ============================================
+
+model CreditLedgerEntry {
+  id          String   @id @default(uuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  entryType   String   // CREDIT_SALE | CREDIT_PAYMENT | CREDIT_ADJUSTMENT | REFUND | OTHER
+  amount      Float    // Positive = debt added, Negative = debt reduced
+  runningBalance Float // Computed running balance after this entry
+  referenceType String? // SALE | PAYMENT | ADJUSTMENT
+  referenceId  String?
+  userId      String   // User who recorded this entry
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@index([customerId, createdAt])
+  @@index([entryType, createdAt])
+  @@index([referenceType, referenceId])
+}
 
 model CreditAccount {
   id              String    @id @default(uuid())

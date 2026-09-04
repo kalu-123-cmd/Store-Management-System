@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, X, FileDown, RefreshCw, ChevronDown, ChevronUp,
-  ClipboardList, FileText, Handshake, AlertTriangle, CheckCircle2,
-  Clock, Send, Trash2, Calendar,
+  Plus, X, RefreshCw, ChevronDown,
+  ClipboardList, FileText, Handshake, CheckCircle2,
+  Send, Trash2,
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { fmt } from '../lib/currency';

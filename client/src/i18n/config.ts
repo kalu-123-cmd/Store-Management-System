@@ -56,7 +56,7 @@ export class GeezCalendar {
   /**
    * Convert Gregorian month to Ethiopian month
    */
-  private static toEthiopianMonth(gregorianMonth: number, gregorianDay: number): number {
+  private static toEthiopianMonth(gregorianMonth: number, _gregorianDay: number): number {
     // Ethiopian months: Meskerem (1) starts on Sept 11/12
     const monthOffset = gregorianMonth - 8; // September is month 8
     return monthOffset >= 0 ? monthOffset + 1 : monthOffset + 13;
@@ -65,7 +65,7 @@ export class GeezCalendar {
   /**
    * Convert Gregorian day to Ethiopian day
    */
-  private static toEthiopianDay(gregorianDay: number, gregorianMonth: number): number {
+  private static toEthiopianDay(gregorianDay: number, _gregorianMonth: number): number {
     // Simplified conversion - would need more complex logic for exact dates
     const dayOffset = gregorianDay - 10;
     return dayOffset > 0 ? dayOffset : 30 + dayOffset;

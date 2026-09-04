@@ -27,6 +27,10 @@ export type StockAlert = {
  */
 export function useStockAlerts(onAlert: (alerts: StockAlert[]) => void) {
   const firedRef = useRef(false);
+  // Hold a stable ref to the callback so we never need it as a useEffect dep
+  const onAlertRef = useRef(onAlert);
+  useEffect(() => { onAlertRef.current = onAlert; });
+
   const { data, refetch } = useQuery(GET_LOW_STOCK, {
     fetchPolicy: 'network-only',
     errorPolicy: 'ignore',
@@ -44,7 +48,7 @@ export function useStockAlerts(onAlert: (alerts: StockAlert[]) => void) {
     // Only fire once per session on initial load
     if (!firedRef.current) {
       firedRef.current = true;
-      onAlert(alerts);
+      onAlertRef.current(alerts);
     }
   }, [data]);
 
@@ -52,7 +56,7 @@ export function useStockAlerts(onAlert: (alerts: StockAlert[]) => void) {
   useEffect(() => {
     const interval = setInterval(() => {
       firedRef.current = false; // allow re-fire on next data load
-      refetch();
+      void refetch();
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [refetch]);

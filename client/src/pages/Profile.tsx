@@ -20,7 +20,7 @@ const ROLE_META: Record<string, { label: string; color: string; icon: React.Reac
 };
 
 export default function Profile() {
-  const { t } = useLangContext();
+  const { t: _t } = useLangContext();
   const { success, error: toastError } = useToast();
   const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
 

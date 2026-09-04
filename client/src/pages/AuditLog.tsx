@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Search, FileDown, User, Package,
   ShoppingCart, AlertTriangle, Trash2, Edit2,
-  LogIn, Settings, Building2, Star, ChevronDown,
+  LogIn, Settings, Building2, Star,
   Globe, Smartphone, Server, Eye, Filter, X,
 } from 'lucide-react';
 import { useRole } from '../hooks/useRole';
@@ -86,7 +86,7 @@ function parseJsonSafe(str: string | null | undefined): any {
 function ChangesPanel({ oldValue, newValue, changes }: { oldValue?: string; newValue?: string; changes?: string }) {
   const ch = parseJsonSafe(changes);
   const ov = parseJsonSafe(oldValue);
-  const nv = parseJsonSafe(newValue);
+  const _nv = parseJsonSafe(newValue);
 
   if (ch && typeof ch === 'object' && !Array.isArray(ch)) {
     const keys = Object.keys(ch);
@@ -104,9 +104,9 @@ function ChangesPanel({ oldValue, newValue, changes }: { oldValue?: string; newV
       </div>
     );
   }
-  if (ov && nv) {
-    const allKeys = [...new Set([...Object.keys(ov), ...Object.keys(nv)])];
-    const diffKeys = allKeys.filter(k => JSON.stringify(ov[k]) !== JSON.stringify(nv[k]));
+  if (ov && _nv) {
+    const allKeys = [...new Set([...Object.keys(ov), ...Object.keys(_nv)])];
+    const diffKeys = allKeys.filter(k => JSON.stringify(ov[k]) !== JSON.stringify(_nv[k]));
     if (!diffKeys.length) return null;
     return (
       <div className="mt-2 space-y-1">
@@ -115,7 +115,7 @@ function ChangesPanel({ oldValue, newValue, changes }: { oldValue?: string; newV
             <span className="font-mono text-muted-foreground w-24 truncate shrink-0">{k}</span>
             <span className="line-through text-destructive/70 truncate max-w-[100px]">{String(ov[k] ?? '—')}</span>
             <span className="text-muted-foreground">→</span>
-            <span className="text-emerald-600 truncate max-w-[100px]">{String(nv[k] ?? '—')}</span>
+            <span className="text-emerald-600 truncate max-w-[100px]">{String(_nv[k] ?? '—')}</span>
           </div>
         ))}
       </div>
@@ -131,7 +131,7 @@ function downloadCSV(logs: any[]) {
     ['Date & Time','User','Role','Email','IP Address','Origin Type','Entity','Action','Details','Changes'],
     ...logs.map(l => {
       const origin = detectOrigin(l.ipAddress);
-      const nv = parseJsonSafe(l.newValue);
+      void parseJsonSafe(l.newValue); // parsed if needed for future use
       return [
         new Date(l.createdAt).toLocaleString(),
         l.user?.name || 'System',
@@ -184,7 +184,6 @@ function LogDetailDrawer({ log, onClose }: { log: any; onClose: () => void }) {
   if (!log) return null;
   const cfg    = ACTION_CONFIG[log.action] || DEFAULT_ACTION;
   const origin = detectOrigin(log.ipAddress);
-  const nv     = parseJsonSafe(log.newValue);
 
   return (
     <AnimatePresence>
@@ -364,7 +363,8 @@ export default function AuditLog() {
   // Stats
   const todayLogs    = allLogs.filter(l => new Date(l.createdAt).toDateString() === new Date().toDateString()).length;
   const salesCount   = allLogs.filter(l => l.action === 'SALE_COMPLETED').length;
-  const adminActions = allLogs.filter(l => l.user?.role === 'ADMIN').length;
+  const _adminActions = allLogs.filter(l => l.user?.role === 'ADMIN').length;
+  void _adminActions; // retained for potential future display
   const uniqueIPCount = new Set(allLogs.map(l => l.ipAddress).filter(Boolean)).size;
 
   const clearAll = () => { setSearch(''); setActionFilter(''); setEntityFilter(''); setUserFilter(''); setIpFilter(''); };

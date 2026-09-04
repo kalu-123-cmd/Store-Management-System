@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
-import { ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, Star, UserCircle, ClipboardList, Barcode, Building2, ChevronDown, Shield, Settings as SettingsIcon, FileText, Briefcase, Brain, Upload } from 'lucide-react';
+import { ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, UserCircle, ClipboardList, Barcode, Building2, ChevronDown, Shield, Settings as SettingsIcon, Briefcase, Brain, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
@@ -173,10 +173,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useDarkMode();
-  const { lang, setLang, t } = useLangContext();
-  const location = useLocation();
-  const allNavItems = [...navItems, ...adminItems];
-  const currentPage = allNavItems.find(item => location.pathname.startsWith(item.path))?.name || 'Dashboard';
+  const { t: _t } = useLangContext();
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">

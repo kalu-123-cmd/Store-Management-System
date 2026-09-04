@@ -190,7 +190,7 @@ export default function Dashboard() {
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  const { data, loading, refetch } = useQuery(GET_DASHBOARD_MAIN, {
+  const { data, loading, refetch: _refetch } = useQuery(GET_DASHBOARD_MAIN, {
     variables: { year: chartYear, month: chartMonth },
     fetchPolicy: 'network-only',
     errorPolicy: 'ignore',

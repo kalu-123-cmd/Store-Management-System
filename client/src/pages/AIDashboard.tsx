@@ -237,13 +237,15 @@ export default function AIDashboard() {
     if (timeRange === 'week') return stats.weekSales;
     if (timeRange === 'month') return stats.monthlyRevenue;
     return stats.todaySales;
-  }, [timeRange, stats]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange, stats.weekSales, stats.monthlyRevenue, stats.todaySales]);
 
   const periodCompare = useMemo(() => {
     if (timeRange === 'week') return { current: stats.weekSales, previous: stats.lastWeekSales, label: 'vs last week' };
     if (timeRange === 'month') return { current: stats.monthlyRevenue, previous: stats.lastMonthRevenue, label: 'vs last month' };
     return { current: stats.todaySales, previous: stats.yesterdaySales, label: 'vs yesterday' };
-  }, [timeRange, stats]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange, stats.weekSales, stats.lastWeekSales, stats.monthlyRevenue, stats.lastMonthRevenue, stats.todaySales, stats.yesterdaySales]);
 
   const growth = growthPct(periodCompare.current, periodCompare.previous);
   const profitMargin = stats.monthlyRevenue > 0
@@ -260,7 +262,8 @@ export default function AIDashboard() {
     if (stats.pendingPurchases > 5) score -= Math.min(stats.pendingPurchases, 10);
     if (stats.totalProducts === 0) score = 0;
     return Math.max(0, score);
-  }, [stats]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stats.lowStockCount, stats.outOfStockCount, stats.expiringCount, stats.pendingPurchases, stats.totalProducts]);
 
   const healthColor = storeHealth >= 80
     ? 'text-emerald-700 bg-emerald-50'
@@ -408,9 +411,13 @@ export default function AIDashboard() {
     }
 
     return items;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isEmptyStore, lowStockProducts, expiringBatches, salesByCategory,
-    stats, profitMargin, cashGap, growth, periodCompare,
+    isEmptyStore, lowStockProducts.length, expiringBatches.length, salesByCategory.length,
+    stats.lowStockCount, stats.outOfStockCount, stats.expiringCount, stats.pendingPurchases,
+    stats.monthlyRevenue, stats.outstandingReceivables, stats.outstandingPayables,
+    stats.totalProducts, profitMargin, cashGap, growth,
+    periodCompare.current, periodCompare.previous,
   ]);
 
   if (loading) {

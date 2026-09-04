@@ -24,6 +24,7 @@ import { PrismaClient } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { processStockOutAtomic } from './inventoryService';
 import { calculateFinancials } from './inventoryService';
+import { recordMovement } from './inventoryLedgerService';
 
 // Configure Decimal for financial precision
 Decimal.set({
@@ -268,13 +269,28 @@ export async function createSaleTransaction(
           throw new Error(`Stock deduction failed for ${product.name}: ${stockResult.error}`);
         }
 
-        // Create sale item
+        // Record in inventory ledger
+        await recordMovement(tx as any, {
+          productId:     item.productId,
+          movementType:  'SALE',
+          quantity:      -item.quantity,           // negative = outflow
+          previousStock: (product.stock),
+          newStock:      (product.stock - item.quantity),
+          referenceType: 'SALE',
+          referenceId:   sale.id,
+          unitCost:      product.costPrice,        // snapshot cost for COGS
+          userId:        request.cashierId,
+          notes:         `Sale ${invoiceNo}`,
+        });
+
+        // Create sale item — capture both selling price and cost price for accurate COGS
         const saleItem = await tx.saleItem.create({
           data: {
             saleId: sale.id,
             productId: item.productId,
             quantity: item.quantity,
             price: item.price,
+            costPrice: product.costPrice, // Snapshot cost at time of sale — never changes
           },
         });
 
@@ -431,15 +447,28 @@ export async function processSaleReturn(
         // Restock inventory
         await tx.product.update({
           where: { id: saleItem.productId },
-          data: {
-            stock: {
-              increment: returnItem.quantity,
-            },
-          },
+          data: { stock: { increment: returnItem.quantity } },
         });
 
-        // Update sale item (optional: track returned quantity)
-        // For now, we'll create a SaleReturn record
+        // Record the customer return in the inventory ledger
+        const currentProduct = await tx.product.findUnique({
+          where:  { id: saleItem.productId },
+          select: { stock: true, costPrice: true },
+        });
+        if (currentProduct) {
+          await recordMovement(tx as any, {
+            productId:     saleItem.productId,
+            movementType:  'CUSTOMER_RETURN',
+            quantity:      returnItem.quantity,   // positive = stock restored
+            previousStock: currentProduct.stock - returnItem.quantity,
+            newStock:      currentProduct.stock,
+            referenceType: 'SALE',
+            referenceId:   saleId,
+            unitCost:      currentProduct.costPrice,
+            userId,
+            notes:         `Return: ${reason}`,
+          });
+        }
       }
 
       // Create return record

@@ -3,7 +3,7 @@ import { useQuery, useMutation, gql } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, X, Trash2, CheckCircle2, Send, Package,
-  ChevronDown, ChevronUp, Truck, FileDown, Upload,
+  ChevronDown, Truck, FileDown, Upload, Search,
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
@@ -460,14 +460,14 @@ function ImportCSVModal({ open, onClose, refetch }: any) {
       reader.onload = async (ev) => {
         const csvContent = ev.target?.result as string;
         const result = await importPOCSV({ variables: { csvContent } });
-        if (result.data.importPOCSV.success) {
-          success('Import successful', `${result.data.importPOCSV.summary.created} purchase orders imported`);
+        if (result.data.importPurchaseOrdersCSV.success) {
+          success('Import successful', `${result.data.importPurchaseOrdersCSV.summary.created} purchase orders imported`);
           refetch();
           onClose();
           setFile(null);
           setPreview([]);
         } else {
-          toastError('Import failed', result.data.importPOCSV.errors[0]?.error || 'Unknown error');
+          toastError('Import failed', result.data.importPurchaseOrdersCSV.errors[0]?.error || 'Unknown error');
         }
         setImporting(false);
       };
@@ -547,12 +547,14 @@ function ImportCSVModal({ open, onClose, refetch }: any) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PurchaseOrders() {
-  const [createOpen, setCreateOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const { data, loading, refetch } = useQuery(GET_PO_DATA, { fetchPolicy: 'cache-and-network' });
+  const [createOpen, setCreateOpen]   = useState(false);
+  const [importOpen, setImportOpen]   = useState(false);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch]           = useState('');
+  const { data, loading, refetch }    = useQuery(GET_PO_DATA, { fetchPolicy: 'cache-and-network' });
   const { success } = useToast();
   const { canMutate, canAdminDelete } = useRole();
-  const { t } = useLangContext();
+  const { t: _t } = useLangContext();
 
   const orders:    any[] = data?.purchaseOrders || [];
   const products:  any[] = data?.products       || [];
@@ -565,7 +567,16 @@ export default function PurchaseOrders() {
   const totalSpend = orders.filter(o => o.status === 'RECEIVED').reduce((s, o) => s + o.totalCost, 0);
 
   // Products below min stock — suggest for reorder
-  const suggested = products.filter((p: any) => p.stock <= p.minStockLevel);
+  const suggested = products.filter((p: any) => p.stock <= p.minStockLevel && p.status === 'ACTIVE');
+
+  // Filtered orders
+  const filteredOrders = orders.filter(o => {
+    const matchStatus = !statusFilter || o.status === statusFilter;
+    const matchSearch = !search ||
+      o.poNumber.toLowerCase().includes(search.toLowerCase()) ||
+      o.supplier?.name.toLowerCase().includes(search.toLowerCase());
+    return matchStatus && matchSearch;
+  });
 
   return (
     <div className="space-y-6">
@@ -610,12 +621,47 @@ export default function PurchaseOrders() {
         ))}
       </div>
 
+      {/* Search + Status filter */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[180px] max-w-sm">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search PO number or supplier…"
+            className="w-full pl-9 pr-4 py-2 bg-card border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary outline-none" />
+        </div>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          className="px-3 py-2 bg-card border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary">
+          <option value="">All Statuses</option>
+          <option value="DRAFT">Draft</option>
+          <option value="SENT">Sent</option>
+          <option value="RECEIVED">Received</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+        {(search || statusFilter) && (
+          <button onClick={() => { setSearch(''); setStatusFilter(''); }}
+            className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 px-2 py-1.5 border border-border rounded-lg hover:bg-muted transition-colors">
+            <X size={11} /> Clear
+          </button>
+        )}
+        <p className="text-xs text-muted-foreground ml-auto">
+          {filteredOrders.length} of {orders.length} orders
+        </p>
+      </div>
+
       {/* Suggested restock alert */}
       {suggested.length > 0 && (
         <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
-          <p className="text-sm font-semibold text-amber-700 mb-2">
-            ⚠ {suggested.length} product{suggested.length !== 1 ? 's' : ''} need restocking
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-amber-700">
+              ⚠ {suggested.length} product{suggested.length !== 1 ? 's' : ''} need restocking
+            </p>
+            {canMutate && (
+              <button onClick={() => setCreateOpen(true)}
+                className="text-xs font-medium text-amber-700 hover:text-amber-900 underline">
+                Create restock order →
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             {suggested.slice(0, 8).map((p: any) => (
               <span key={p.id} className={`text-xs px-2.5 py-1 rounded-full font-medium ${p.stock === 0 ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-700'}`}>
@@ -643,17 +689,19 @@ export default function PurchaseOrders() {
                 <tr><td colSpan={8} className="text-center py-14">
                   <div className="flex justify-center"><div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>
                 </td></tr>
-              ) : orders.length === 0 ? (
+              ) : filteredOrders.length === 0 ? (
                 <tr><td colSpan={8} className="text-center py-14">
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-12 h-12 bg-muted rounded-xl flex items-center justify-center">
                       <Package size={24} className="text-muted-foreground" />
                     </div>
-                    <p className="text-muted-foreground text-sm">No purchase orders yet.</p>
-                    {canMutate && <button onClick={() => setCreateOpen(true)} className="text-primary text-sm hover:underline">Create your first order →</button>}
+                    <p className="text-muted-foreground text-sm">
+                      {search || statusFilter ? 'No orders match your filters.' : 'No purchase orders yet.'}
+                    </p>
+                    {canMutate && !search && !statusFilter && <button onClick={() => setCreateOpen(true)} className="text-primary text-sm hover:underline">Create your first order →</button>}
                   </div>
                 </td></tr>
-              ) : orders.map(order => (
+              ) : filteredOrders.map(order => (
                 <PORow key={order.id} order={order} refetch={refetch} canMutate={canMutate} canAdminDelete={canAdminDelete} />
               ))}
             </tbody>

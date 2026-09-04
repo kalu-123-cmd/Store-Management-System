@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Settings as SettingsIcon, Globe, Bell, Moon, Sun,
-  Palette, Database, Shield, Save, Check,
+  Palette, Database, Shield, Save,
   Volume2, VolumeX, Mail,
 } from 'lucide-react';
 import { useLangContext } from '../lib/LangContext';
