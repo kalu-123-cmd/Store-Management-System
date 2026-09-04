@@ -15,13 +15,15 @@ import PWAInstallPrompt from './components/PWAInstallPrompt.tsx'
 import './i18n/config' // Initialize i18next
 
 // ── Service worker cleanup in dev ─────────────────────────────────────────────
+// Unregister any stale SW from previous sessions. The workbox-generated SW
+// in dev can throw "Cannot read properties of undefined (reading 'startTime')"
+// from its PerformanceObserver — this cleanup prevents stale SWs from running.
 if (import.meta.env.DEV && 'serviceWorker' in navigator) {
   void navigator.serviceWorker.getRegistrations().then((registrations) => {
     registrations.forEach((registration) => void registration.unregister())
   })
   void caches.keys().then((keys) => {
-    keys.filter((key) => key.includes('workbox') || key.includes('graphql-cache'))
-      .forEach((key) => void caches.delete(key))
+    keys.forEach((key) => void caches.delete(key))
   })
 }
 

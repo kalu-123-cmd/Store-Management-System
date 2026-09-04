@@ -35,6 +35,9 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,ico,woff2}'],
         // Don't cache image data URIs (base64 product images are large)
         globIgnores: ['**/node_modules/**/*'],
+        // Disable workbox performance observer to prevent TypeError on browsers
+        // that don't support PerformanceLongTaskTiming (startTime undefined error)
+        disableDevLogs: true,
         runtimeCaching: [
           {
             // Cache GraphQL responses with network-first strategy
