@@ -131,6 +131,18 @@ export const UpdateCustomerSchema = z.object({
   notes:   optStr(1000),
 });
 
+export const SetCreditLimitSchema = z.object({
+  customerId: id,
+  creditLimit: price,
+});
+
+export const RecordCreditPaymentSchema = z.object({
+  customerId: id,
+  amount:     price,
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CARD', 'TELEBIRR', 'CBE_BIRR', 'OTHER']).optional().default('CASH'),
+  notes:      optStr(500),
+});
+
 // ── Product ────────────────────────────────────────────────────────────────────
 
 export const CreateProductSchema = z.object({

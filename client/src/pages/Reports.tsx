@@ -18,6 +18,7 @@ const GET_REPORTS = gql`
       id invoiceNo totalAmount createdAt
       customer { id name }
       items { quantity price product { name costPrice } }
+      returns { refundAmount }
     }
     products {
       id name sku stock costPrice sellingPrice status minStockLevel
@@ -90,9 +91,19 @@ export default function Reports() {
   }));
 
   // KPI aggregations
-  const totalRevenue = sales.reduce((s: number, x: any) => s + x.totalAmount, 0);
-  const totalProfit  = sales.reduce((s: number, x: any) =>
-    s + x.items.reduce((is: number, i: any) => is + (i.price - i.product.costPrice) * i.quantity, 0), 0);
+  const totalRevenue = sales.reduce((s: number, x: any) => {
+    const refund = (x.returns || []).reduce((a: number, r: any) => a + r.refundAmount, 0);
+    return s + Math.max(0, x.totalAmount - refund);
+  }, 0);
+  const totalProfit  = sales.reduce((s: number, x: any) => {
+    const refund = (x.returns || []).reduce((a: number, r: any) => a + r.refundAmount, 0);
+    const gross = x.items.reduce((is: number, i: any) => is + (i.price - (i.product?.costPrice || 0)) * i.quantity, 0);
+    const ratio = x.totalAmount > 0 ? Math.max(0, 1 - refund / x.totalAmount) : 0;
+    return s + gross * ratio;
+  }, 0);
+  const totalRefunds = sales.reduce((s: number, x: any) =>
+    s + (x.returns || []).reduce((a: number, r: any) => a + r.refundAmount, 0), 0);
+  const cogs = totalRevenue - totalProfit;
   const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
   const inventoryValue = products.reduce((s: number, p: any) => s + p.costPrice * p.stock, 0);
@@ -126,6 +137,16 @@ export default function Reports() {
 
   const applyFilter = () => { setActiveRange(dateRange); };
   const resetFilter = () => { setDateRange({ start: '', end: '' }); setActiveRange({ start: '', end: '' }); };
+  const preset = (days: number | 'month') => {
+    const end = new Date();
+    const start = new Date();
+    if (days === 'month') start.setDate(1);
+    else start.setDate(start.getDate() - days);
+    const fmtD = (d: Date) => d.toISOString().slice(0, 10);
+    const next = { start: fmtD(start), end: fmtD(end) };
+    setDateRange(next);
+    setActiveRange(next);
+  };
 
   const exportSales = () => {
     downloadCSV(sales.map((s: any) => ({
@@ -199,6 +220,10 @@ export default function Reports() {
           className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors">
           Reset
         </button>
+        <button onClick={() => preset(0)} className="px-3 py-2 border border-border rounded-lg text-xs hover:bg-muted">Today</button>
+        <button onClick={() => preset(7)} className="px-3 py-2 border border-border rounded-lg text-xs hover:bg-muted">7 days</button>
+        <button onClick={() => preset(30)} className="px-3 py-2 border border-border rounded-lg text-xs hover:bg-muted">30 days</button>
+        <button onClick={() => preset('month')} className="px-3 py-2 border border-border rounded-lg text-xs hover:bg-muted">This month</button>
         {(activeRange.start || activeRange.end) && (
           <span className="text-xs text-primary font-medium bg-primary/10 px-2.5 py-1 rounded-full">
             Filtered
@@ -220,6 +245,16 @@ export default function Reports() {
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.21 }}>
           <StatCard label={t('inventoryValue')} value={fmtInt(inventoryValue)} icon={<Package size={16} className="text-amber-500" />} color="bg-amber-500/10" />
         </motion.div>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-5">
+        <h3 className="text-base font-semibold mb-3">Profit &amp; loss</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div><p className="text-xs text-muted-foreground">Net sales</p><p className="text-lg font-bold">{fmt(totalRevenue)}</p></div>
+          <div><p className="text-xs text-muted-foreground">COGS</p><p className="text-lg font-bold">{fmt(cogs)}</p></div>
+          <div><p className="text-xs text-muted-foreground">Refunds</p><p className="text-lg font-bold text-destructive">{fmt(totalRefunds)}</p></div>
+          <div><p className="text-xs text-muted-foreground">Gross profit</p><p className="text-lg font-bold text-emerald-600">{fmt(totalProfit)}</p></div>
+        </div>
       </div>
 
       {/* Charts Row */}

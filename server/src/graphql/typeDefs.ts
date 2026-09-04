@@ -44,6 +44,36 @@ export const typeDefs = `#graphql
     totalSpent: Float
     purchaseCount: Int
     sales: [Sale!]!
+    creditLimit: Float
+    currentDebt: Float
+    riskScore: Int
+    status: String
+    creditAccount: CreditAccount
+  }
+
+  type CreditAccount {
+    id: ID!
+    customerId: String!
+    creditLimit: Float!
+    currentBalance: Float!
+    availableCredit: Float!
+    overdueBalance: Float!
+    riskScore: Int!
+    status: String!
+    lastPaymentDate: String
+    nextPaymentDue: String
+  }
+
+  type CreditLedgerEntry {
+    id: ID!
+    customerId: String!
+    entryType: String!
+    amount: Float!
+    runningBalance: Float!
+    referenceType: String
+    referenceId: String
+    notes: String
+    createdAt: String!
   }
 
   type Product {
@@ -1240,7 +1270,7 @@ export const typeDefs = `#graphql
     customers: [Customer!]!
     customer(id: ID!): Customer
 
-    sales(startDate: String, endDate: String, customerId: String): [Sale!]!
+    sales(startDate: String, endDate: String, customerId: String, limit: Int, offset: Int): [Sale!]!
     sale(id: ID!): Sale
 
     transactions(productId: String): [Transaction!]!
@@ -1258,7 +1288,9 @@ export const typeDefs = `#graphql
 
     productMovements(productId: ID!, limit: Int, offset: Int): InventoryMovementPage!
 
-    activityLogs: [ActivityLog!]!
+    activityLogs(userId: String, action: String, entityType: String, entityId: String, startDate: String, endDate: String): [ActivityLog!]!
+    creditAccount(customerId: ID!): CreditAccount
+    creditLedgerEntries(customerId: ID!): [CreditLedgerEntry!]!
 
     dashboardStats: DashboardStats!
 
@@ -1404,6 +1436,8 @@ export const typeDefs = `#graphql
     createCustomer(name: String!, email: String, phone: String): Customer!
     updateCustomer(id: ID!, name: String, email: String, phone: String): Customer!
     deleteCustomer(id: ID!): Boolean!
+    setCustomerCreditLimit(customerId: ID!, creditLimit: Float!): CreditAccount!
+    recordCreditPayment(customerId: ID!, amount: Float!, paymentMethod: String, notes: String): CreditAccount!
 
     createProduct(
       name: String!

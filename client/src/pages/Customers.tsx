@@ -3,7 +3,7 @@ import { useQuery, useMutation, gql } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Edit2, Trash2, X, Mail, Phone, ShoppingBag,
-  Search, ChevronRight, Receipt, Calendar,
+  Search, ChevronRight, Receipt, Calendar, Wallet,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useToast } from '../components/Toast';
@@ -15,18 +15,44 @@ import { useLangContext } from '../lib/LangContext';
 
 const GET_CUSTOMERS = gql`
   query {
-    customers { id name email phone createdAt totalSpent purchaseCount }
+    customers {
+      id name email phone createdAt totalSpent purchaseCount
+      creditLimit currentDebt riskScore status
+      creditAccount { id creditLimit currentBalance availableCredit status }
+    }
   }
 `;
 
 const GET_CUSTOMER_HISTORY = gql`
   query GetCustomerHistory($id: ID!) {
     customer(id: $id) {
-      id name email phone createdAt totalSpent purchaseCount
+      id name email phone createdAt totalSpent purchaseCount currentDebt creditLimit
       sales {
         id invoiceNo totalAmount createdAt
         items { id quantity price product { name sku } }
       }
+    }
+    creditLedgerEntries(customerId: $id) {
+      id entryType amount runningBalance notes createdAt
+    }
+    creditAccount(customerId: $id) {
+      id creditLimit currentBalance availableCredit status riskScore
+    }
+  }
+`;
+
+const SET_CREDIT_LIMIT = gql`
+  mutation SetCreditLimit($customerId: ID!, $creditLimit: Float!) {
+    setCustomerCreditLimit(customerId: $customerId, creditLimit: $creditLimit) {
+      id creditLimit currentBalance availableCredit
+    }
+  }
+`;
+
+const RECORD_CREDIT_PAY = gql`
+  mutation RecordCreditPayment($customerId: ID!, $amount: Float!, $paymentMethod: String, $notes: String) {
+    recordCreditPayment(customerId: $customerId, amount: $amount, paymentMethod: $paymentMethod, notes: $notes) {
+      id currentBalance availableCredit
     }
   }
 `;
@@ -106,13 +132,21 @@ function CustomerModal({ open, onClose, refetch, editCustomer }: any) {
 
 function HistoryDrawer({ customerId, onClose }: { customerId: string; onClose: () => void }) {
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
-  const { data, loading } = useQuery(GET_CUSTOMER_HISTORY, {
+  const [payAmt, setPayAmt] = useState('');
+  const [limitAmt, setLimitAmt] = useState('');
+  const { data, loading, refetch } = useQuery(GET_CUSTOMER_HISTORY, {
     variables: { id: customerId },
     fetchPolicy: 'cache-and-network',
   });
+  const [recordPay] = useMutation(RECORD_CREDIT_PAY);
+  const [setLimit] = useMutation(SET_CREDIT_LIMIT);
+  const { success, error: toastError } = useToast();
+  const { canMutate } = useRole();
 
   const customer = data?.customer;
   const sales: any[] = customer?.sales || [];
+  const ledger: any[] = data?.creditLedgerEntries || [];
+  const account = data?.creditAccount;
 
   return (
     <AnimatePresence>
@@ -184,14 +218,48 @@ function HistoryDrawer({ customerId, onClose }: { customerId: string; onClose: (
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Total Spent</p>
             </div>
             <div className="p-3 text-center">
-              <p className="text-lg font-bold text-foreground">
-                {customer.purchaseCount > 0
-                  ? `$${(customer.totalSpent / customer.purchaseCount).toFixed(0)}`
-                  : '—'
-                }
-              </p>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Avg Order</p>
+              <p className="text-lg font-bold text-amber-600">{fmt(customer.currentDebt || 0)}</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Utang</p>
             </div>
+          </div>
+        )}
+
+        {customer && canMutate && (
+          <div className="p-4 border-b border-border space-y-2">
+            <p className="text-xs font-semibold uppercase text-muted-foreground flex items-center gap-1"><Wallet size={12} /> Credit / utang</p>
+            <p className="text-xs text-muted-foreground">
+              Limit {fmt(account?.creditLimit ?? customer.creditLimit ?? 0)} · Available {fmt(account?.availableCredit ?? 0)}
+            </p>
+            <div className="flex gap-2">
+              <input type="number" min={0} value={limitAmt} onChange={e => setLimitAmt(e.target.value)} placeholder="Set limit"
+                className="flex-1 px-2 py-1.5 bg-background border border-border rounded text-sm" />
+              <button onClick={async () => {
+                try {
+                  await setLimit({ variables: { customerId, creditLimit: Number(limitAmt) } });
+                  success('Credit limit updated'); refetch();
+                } catch (e: any) { toastError('Failed', e.message); }
+              }} className="px-3 py-1.5 bg-muted rounded text-xs font-medium">Save limit</button>
+            </div>
+            <div className="flex gap-2">
+              <input type="number" min={0} value={payAmt} onChange={e => setPayAmt(e.target.value)} placeholder="Payment amount"
+                className="flex-1 px-2 py-1.5 bg-background border border-border rounded text-sm" />
+              <button onClick={async () => {
+                try {
+                  await recordPay({ variables: { customerId, amount: Number(payAmt), paymentMethod: 'CASH' } });
+                  success('Payment recorded'); setPayAmt(''); refetch();
+                } catch (e: any) { toastError('Failed', e.message); }
+              }} className="px-3 py-1.5 bg-primary text-primary-foreground rounded text-xs font-medium">Record pay</button>
+            </div>
+            {ledger.length > 0 && (
+              <ul className="max-h-28 overflow-y-auto text-xs space-y-1">
+                {ledger.slice(0, 8).map((e: any) => (
+                  <li key={e.id} className="flex justify-between text-muted-foreground">
+                    <span>{e.entryType} · {new Date(e.createdAt).toLocaleDateString()}</span>
+                    <span className={e.amount < 0 ? 'text-emerald-600' : 'text-amber-700'}>{fmt(e.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -359,7 +427,7 @@ export default function Customers() {
             <table className="w-full text-left text-sm">
               <thead className="bg-muted/30 text-muted-foreground text-xs uppercase border-b border-border">
                 <tr>
-                  {['Customer', 'Contact', t('sales'), 'Total Spent', 'Joined', 'Actions'].map(h => (
+                  {['Customer', 'Contact', t('sales'), 'Total Spent', 'Utang', 'Joined', 'Actions'].map(h => (
                     <th key={h} className="px-5 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -367,7 +435,7 @@ export default function Customers() {
               <tbody>
                 {customers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
+                    <td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
                       No customers found.
                     </td>
                   </tr>
@@ -421,6 +489,11 @@ export default function Customers() {
                     {/* Total spent */}
                     <td className="px-5 py-4">
                       <span className="font-semibold text-emerald-500">{fmt(c.totalSpent || 0)}</span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`font-semibold ${(c.currentDebt || 0) > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                        {fmt(c.currentDebt || 0)}
+                      </span>
                     </td>
 
                     {/* Joined */}

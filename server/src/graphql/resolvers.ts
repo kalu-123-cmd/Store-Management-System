@@ -4,6 +4,8 @@ import { sendSaleReceipt, sendLowStockAlert } from '../email';
 import { createAtomicSale, createAtomicReturn } from '../services/atomicSaleService';
 import { calculateFinancials } from '../services/inventoryService';
 import { adjustStockWithLedger, getRecentMovements } from '../services/inventoryLedgerService';
+import { netRevenue, netProfit } from '../services/financials';
+import { CreditLedgerService } from '../services/creditLedgerService';
 import { createProcurementService } from '../services/procurementService';
 import { CSVImportService } from '../services/csvImportService';
 import {
@@ -28,6 +30,8 @@ import {
   CreateUserSchema,
   UpdateUserRoleSchema,
   CreateOrganizationSchema,
+  SetCreditLimitSchema,
+  RecordCreditPaymentSchema,
 } from '../validation/schemas';
 import {
   requireAuth,
@@ -51,6 +55,26 @@ function mapItem(item: any) {
       : 0,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
+  };
+}
+
+function mapBatch(b: any) {
+  if (!b) return b;
+  return {
+    ...b,
+    manufacturingDate: b.manufacturingDate?.toISOString?.() ?? b.manufacturingDate,
+    expiryDate: b.expiryDate?.toISOString?.() ?? b.expiryDate,
+    createdAt: b.createdAt?.toISOString?.() ?? b.createdAt,
+    updatedAt: b.updatedAt?.toISOString?.() ?? b.updatedAt,
+  };
+}
+
+function mapCreditAccount(a: any) {
+  if (!a) return null;
+  return {
+    ...a,
+    lastPaymentDate: a.lastPaymentDate?.toISOString?.() ?? a.lastPaymentDate,
+    nextPaymentDue: a.nextPaymentDue?.toISOString?.() ?? a.nextPaymentDue,
   };
 }
 
@@ -142,14 +166,26 @@ export const resolvers = {
     customers: async (_: any, __: any, { prisma, user }: any) => {
       requireAuth(user);
       const customers = await prisma.customer.findMany({
-        include: { sales: { include: { items: true } } },
+        include: { creditAccount: true },
+        orderBy: { createdAt: 'desc' },
       });
-      return customers.map((c: any) => ({
-        ...c,
-        createdAt: c.createdAt.toISOString(),
-        totalSpent: c.sales.reduce((sum: number, s: any) => sum + s.totalAmount, 0),
-        purchaseCount: c.sales.length,
-      }));
+      const spent = await prisma.sale.groupBy({
+        by: ['customerId'],
+        _sum: { totalAmount: true },
+        _count: { id: true },
+        where: { customerId: { not: null } },
+      });
+      const spentMap = new Map(spent.map((s: any) => [s.customerId as string, s]));
+      return customers.map((c: any) => {
+        const agg = spentMap.get(c.id) as { _sum?: { totalAmount?: number }; _count?: { id?: number } } | undefined;
+        return {
+          ...c,
+          createdAt: c.createdAt.toISOString(),
+          totalSpent: agg?._sum?.totalAmount || 0,
+          purchaseCount: agg?._count?.id || 0,
+          creditAccount: mapCreditAccount(c.creditAccount),
+        };
+      });
     },
     customer: async (_: any, { id }: any, { prisma, user }: any) => {
       requireAuth(user);
@@ -172,7 +208,7 @@ export const resolvers = {
       };
     },
 
-    sales: async (_: any, { startDate, endDate, customerId }: any, { prisma, user }: any) => {
+    sales: async (_: any, { startDate, endDate, customerId, limit, offset }: any, { prisma, user }: any) => {
       requireAuth(user);
       const where: any = {};
       if (startDate) where.createdAt = { gte: new Date(startDate) };
@@ -180,6 +216,8 @@ export const resolvers = {
       if (customerId) where.customerId = customerId;
       const sales = await prisma.sale.findMany({
         where, orderBy: { createdAt: 'desc' },
+        take: typeof limit === 'number' ? Math.min(limit, 500) : undefined,
+        skip: typeof offset === 'number' ? offset : undefined,
         include: { items: { include: { product: true } }, customer: true, user: true, returns: true },
       });
       return sales.map((s: any) => ({ ...s, createdAt: s.createdAt.toISOString() }));
@@ -261,8 +299,11 @@ export const resolvers = {
       if (action) where.action = action;
       if (entityType) where.entityType = entityType;
       if (entityId) where.entityId = entityId;
-      if (startDate) where.createdAt = { gte: new Date(startDate) };
-      if (endDate) where.createdAt = { lte: new Date(endDate) };
+      if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) where.createdAt.gte = new Date(startDate);
+        if (endDate) where.createdAt.lte = new Date(endDate);
+      }
       const logs = await prisma.activityLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -270,6 +311,22 @@ export const resolvers = {
         include: { user: true },
       });
       return logs.map((l: any) => ({ ...l, createdAt: l.createdAt.toISOString() }));
+    },
+
+    creditAccount: async (_: any, { customerId }: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.CREDIT_VIEW);
+      const account = await prisma.creditAccount.findUnique({ where: { customerId } });
+      return mapCreditAccount(account);
+    },
+
+    creditLedgerEntries: async (_: any, { customerId }: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.CREDIT_VIEW);
+      const rows = await prisma.creditLedgerEntry.findMany({
+        where: { customerId },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return rows.map((r: any) => ({ ...r, createdAt: r.createdAt.toISOString() }));
     },
 
     dashboardStats: async (_: any, __: any, { prisma, user }: any) => {
@@ -297,7 +354,7 @@ export const resolvers = {
           prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfYesterday, lt: startOfDay } } }),
           prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfWeek } } }),
           prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfLastWeek, lt: startOfWeek } } }),
-          prisma.sale.findMany({ where: { createdAt: { gte: startOfMonth } }, include: { items: { include: { product: true } } } }),
+          prisma.sale.findMany({ where: { createdAt: { gte: startOfMonth } }, include: { items: { include: { product: true } }, returns: true } }),
           prisma.sale.aggregate({ _sum: { totalAmount: true }, where: { createdAt: { gte: startOfLastMonth, lte: endOfLastMonth } } }),
           prisma.itemBatch.findMany({
             where: {
@@ -312,11 +369,8 @@ export const resolvers = {
         ]);
 
         const inventoryValue = products.reduce((sum: number, p: any) => sum + p.costPrice * p.stock, 0);
-        const monthlyRevenue = monthlySales.reduce((sum: number, s: any) => sum + s.totalAmount, 0);
-        const monthlyProfit = monthlySales.reduce((sum: number, s: any) => {
-          // Use costPrice snapshot on SaleItem for accurate historical COGS
-          return sum + s.items.reduce((isum: number, item: any) => isum + (item.price - (item.costPrice ?? item.product?.costPrice ?? 0)) * item.quantity, 0);
-        }, 0);
+        const monthlyRevenue = monthlySales.reduce((sum: number, s: any) => sum + netRevenue(s), 0);
+        const monthlyProfit = monthlySales.reduce((sum: number, s: any) => sum + netProfit(s), 0);
         const totalStock = products.reduce((sum: number, p: any) => sum + p.stock, 0);
         const lowStockCount = products.filter((p: any) => p.stock > 0 && p.stock <= p.minStockLevel).length;
         const outOfStockCount = products.filter((p: any) => p.stock === 0).length;
@@ -423,7 +477,7 @@ export const resolvers = {
 
       const sales = await prisma.sale.findMany({
         where: { createdAt: { gte: start, lte: end } },
-        include: { items: { include: { product: true } } },
+        include: { items: { include: { product: true } }, returns: true },
         orderBy: { createdAt: 'asc' },
       });
 
@@ -431,13 +485,9 @@ export const resolvers = {
       for (const s of sales) {
         const dateKey = s.createdAt.toISOString().slice(0, 10);
         if (!byDay[dateKey]) byDay[dateKey] = { revenue: 0, profit: 0, count: 0 };
-        byDay[dateKey].revenue += s.totalAmount;
+        byDay[dateKey].revenue += netRevenue(s);
         byDay[dateKey].count += 1;
-        byDay[dateKey].profit += s.items.reduce(
-          // Use costPrice snapshot on SaleItem for accurate historical COGS
-          (sum: number, item: any) => sum + (item.price - (item.costPrice ?? item.product?.costPrice ?? 0)) * item.quantity,
-          0
-        );
+        byDay[dateKey].profit += netProfit(s);
       }
 
       return Object.entries(byDay).map(([date, v]) => ({ date, ...v }));
@@ -624,11 +674,12 @@ export const resolvers = {
       if (productId) where.productId = productId;
       if (warehouseId) where.warehouseId = warehouseId;
       if (status) where.status = status;
-      return prisma.itemBatch.findMany({
+      const rows = await prisma.itemBatch.findMany({
         where,
         include: { product: true, supplier: true, warehouse: true, location: true },
         orderBy: { createdAt: 'desc' },
       });
+      return rows.map(mapBatch);
     },
     itemBatch: async (_: any, { id }: any, { prisma, user }: any) => {
       requireAuth(user);
@@ -1711,6 +1762,58 @@ export const resolvers = {
       requirePermission(user, PERMISSIONS.CUSTOMER_DELETE);
       await prisma.customer.delete({ where: { id } });
       return true;
+    },
+
+    setCustomerCreditLimit: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.CREDIT_MANAGE);
+      const input = validate(SetCreditLimitSchema, args);
+      const svc = new CreditLedgerService(prisma);
+      const account = await svc.createOrUpdateCreditAccount(input.customerId, input.creditLimit, user.id);
+      const row = await prisma.creditAccount.findUnique({ where: { customerId: input.customerId } });
+      await prisma.customer.update({
+        where: { id: input.customerId },
+        data: { creditLimit: input.creditLimit },
+      });
+      return mapCreditAccount(row) || {
+        id: account.id,
+        customerId: account.customerId,
+        creditLimit: Number(account.creditLimit),
+        currentBalance: Number(account.currentBalance),
+        availableCredit: Number(account.availableCredit),
+        overdueBalance: Number(account.overdueBalance),
+        riskScore: account.riskScore,
+        status: account.status,
+      };
+    },
+
+    recordCreditPayment: async (_: any, args: any, { prisma, user }: any) => {
+      requirePermission(user, PERMISSIONS.CREDIT_MANAGE);
+      const input = validate(RecordCreditPaymentSchema, args);
+      const account = await prisma.creditAccount.findUnique({ where: { customerId: input.customerId } });
+      if (!account) throw new Error('Customer has no credit account. Set a credit limit first.');
+      const svc = new CreditLedgerService(prisma);
+      const result = await svc.processCreditPayment(
+        account.id,
+        input.amount,
+        input.paymentMethod || 'CASH',
+        undefined,
+        input.notes,
+      );
+      if (!result.success) throw new Error(result.error || 'Payment failed');
+      const updated = await prisma.creditAccount.findUnique({ where: { id: account.id } });
+      await prisma.creditLedgerEntry.create({
+        data: {
+          customerId: input.customerId,
+          entryType: 'CREDIT_PAYMENT',
+          amount: -input.amount,
+          runningBalance: updated?.currentBalance ?? 0,
+          referenceType: 'PAYMENT',
+          referenceId: account.id,
+          userId: user.id,
+          notes: input.notes,
+        },
+      });
+      return mapCreditAccount(updated);
     },
 
     createProduct: async (_: any, args: any, { prisma, user }: any) => {

@@ -240,6 +240,13 @@ export default function Dashboard() {
         <KPICard title={t('categories')}      value={stats?.totalCategories || 0}        icon={<Layers size={20} className="text-orange-500" />}         color="bg-orange-500/10" delay={0.49} />
       </div>
 
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard title="Expiring lots" value={stats?.expiringCount || 0} icon={<AlertTriangle size={20} className="text-amber-500" />} color="bg-amber-500/10" delay={0.5} />
+        <KPICard title="Open POs" value={stats?.pendingPurchases || 0} icon={<ShoppingCart size={20} className="text-sky-500" />} color="bg-sky-500/10" delay={0.52} />
+        <KPICard title="Receivables" value={fmt(stats?.outstandingReceivables || 0)} icon={<DollarSign size={20} className="text-emerald-500" />} color="bg-emerald-500/10" delay={0.54} />
+        <KPICard title="Payables" value={fmt(stats?.outstandingPayables || 0)} icon={<DollarSign size={20} className="text-violet-500" />} color="bg-violet-500/10" delay={0.56} />
+      </div>
+
       {/* ── Charts Row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 

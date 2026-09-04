@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
-import { ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, UserCircle, ClipboardList, Barcode, Building2, ChevronDown, Shield, Settings as SettingsIcon, Briefcase, Brain, Upload } from 'lucide-react';
+import { ShoppingCart, Users, Truck, LogOut, Tag, Archive, BarChart2, Menu, X, Sun, Moon, UserCog, UserCircle, ClipboardList, Barcode, Building2, ChevronDown, Shield, Settings as SettingsIcon, Briefcase, Brain, Upload, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useRole } from '../hooks/useRole';
@@ -70,6 +70,7 @@ const navItems = [
   { name: 'Products',        path: '/products',   icon: <Archive size={18} /> },
   { name: 'CSV Import',      path: '/csv-import', icon: <Upload size={18} /> },
   { name: 'Inventory',       path: '/inventory',  icon: <Tag size={18} /> },
+  { name: 'Batches',         path: '/batches',    icon: <Layers size={18} /> },
   { name: 'Purchase Orders', path: '/purchases',  icon: <ClipboardList size={18} /> },
   { name: 'Sales',           path: '/sales',      icon: <ShoppingCart size={18} /> },
   { name: 'Customers',       path: '/customers', icon: <Users size={18} /> },

@@ -542,6 +542,10 @@ model ItemBatch {
 
   serialNumbers      SerialNumber[]
   stockTransferItems StockTransferItem[]
+
+  @@index([productId])
+  @@index([expiryDate])
+  @@index([status])
 }
 
 model SerialNumber {

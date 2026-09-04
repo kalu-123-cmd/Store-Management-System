@@ -3,26 +3,27 @@ import { useQuery, useMutation, gql } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, ShoppingCart, X, Receipt, ChevronLeft, ChevronRight,
-  Printer, Package, User, Calendar, Hash, Barcode, RotateCcw, AlertTriangle,
+  Printer, Package, User, Calendar, Hash, Barcode, RotateCcw, AlertTriangle, WifiOff,
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { useRole } from '../hooks/useRole';
 import { fmt } from '../lib/currency';
 import { useLangContext } from '../lib/LangContext';
+import { enqueueSale, isBrowserOnline, listPendingSales, markPendingFailed, removePendingSale } from '../lib/offlineQueue';
 
 // ── GraphQL ───────────────────────────────────────────────────────────────────
 
 const GET_SALES_DATA = gql`
   query GetSalesData {
     sales {
-      id invoiceNo totalAmount createdAt
+      id invoiceNo totalAmount subtotal vatAmount paymentMethod paymentStatus notes createdAt
       customer { id name email phone }
       user { name }
       items { id quantity price product { name sku } }
       returns { id refundAmount reason createdAt }
     }
     products { id name sku barcode sellingPrice stock imageUrl }
-    customers { id name }
+    customers { id name phone currentDebt creditLimit }
   }
 `;
 
@@ -51,13 +52,22 @@ const CREATE_SALE = gql`
 `;
 
 const RETURN_SALE = gql`
-  mutation ReturnSale($saleId: ID!, $reason: String) {
-    returnSale(saleId: $saleId, reason: $reason) { id refundAmount createdAt }
+  mutation ReturnSale($saleId: ID!, $reason: String, $items: [ReturnItemInput!]) {
+    returnSale(saleId: $saleId, reason: $reason, items: $items) { id refundAmount createdAt }
   }
 `;
 
 const PAGE_SIZE = 10;
 type CartItem = { productId: string; name: string; quantity: number; price: number; stock: number };
+
+const PAYMENT_METHODS = [
+  { id: 'CASH', label: 'Cash' },
+  { id: 'CARD', label: 'Card' },
+  { id: 'TELEBIRR', label: 'Telebirr' },
+  { id: 'CBE_BIRR', label: 'CBE Birr' },
+  { id: 'BANK_TRANSFER', label: 'Bank transfer' },
+  { id: 'CREDIT', label: 'Credit (utang)' },
+];
 
 // ── Receipt + Return Modal ────────────────────────────────────────────────────
 
@@ -65,6 +75,7 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
   const printRef = useRef<HTMLDivElement>(null);
   const [returnReason, setReturnReason] = useState('');
   const [showReturnForm, setShowReturnForm] = useState(false);
+  const [returnQty, setReturnQty] = useState<Record<string, number>>({});
   const [returnSale, { loading: returning }] = useMutation(RETURN_SALE);
   const { success, error: toastError } = useToast();
   const { canMutate } = useRole();
@@ -85,8 +96,17 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
 
   const handleReturn = async () => {
     try {
-      await returnSale({ variables: { saleId: sale.id, reason: returnReason || null } });
-      success('Refund processed', `${fmt(sale.totalAmount)} refunded — stock restored.`);
+      const items = (sale.items || [])
+        .map((i: any) => ({ saleItemId: i.id, quantity: Number(returnQty[i.id] ?? i.quantity) }))
+        .filter((i: { quantity: number }) => i.quantity > 0);
+      await returnSale({
+        variables: {
+          saleId: sale.id,
+          reason: returnReason || null,
+          items: items.length ? items : undefined,
+        },
+      });
+      success('Refund processed', 'Stock restored for returned items.');
       refetch(); onClose();
     } catch (e: any) { toastError('Return failed', e.message); }
   };
@@ -183,8 +203,21 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
               <div className="bg-muted/20 rounded-lg p-4 space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
                   <span>{sale.items.length} item{sale.items.length !== 1 ? 's' : ''}</span>
-                  <span>Subtotal: ${subtotal.toFixed(2)}</span>
+                  <span>Subtotal: {fmt(sale.subtotal ?? subtotal)}</span>
                 </div>
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>VAT 15%</span>
+                  <span>{fmt(sale.vatAmount ?? subtotal * 0.15)}</span>
+                </div>
+                {sale.paymentMethod && (
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Payment</span>
+                    <span>{sale.paymentMethod.replace('_', ' ')}</span>
+                  </div>
+                )}
+                {sale.notes?.includes('DISCOUNT') && (
+                  <p className="text-xs text-amber-700">{sale.notes}</p>
+                )}
                 <div className="flex justify-between items-center pt-2 border-t border-border">
                   <span className="font-semibold text-foreground">Total Paid</span>
                   <span className={`text-xl font-bold ${isReturned ? 'line-through text-muted-foreground' : 'text-primary'}`}>{fmt(sale.totalAmount)}</span>
@@ -210,9 +243,22 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
                 ) : (
                   <div className="p-4 space-y-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-destructive">
-                      <AlertTriangle size={15} /> Confirm Full Return
+                      <AlertTriangle size={15} /> Confirm return
                     </div>
-                    <p className="text-xs text-muted-foreground">This will refund {fmt(sale.totalAmount)} and restore all stock levels.</p>
+                    <p className="text-xs text-muted-foreground">Leave quantities at max for a full refund, or lower them for a partial return.</p>
+                    <div className="space-y-2">
+                      {sale.items.map((item: any) => (
+                        <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="truncate flex-1">{item.product?.name}</span>
+                          <input type="number" min={0} max={item.quantity}
+                            value={returnQty[item.id] ?? item.quantity}
+                            onChange={e => setReturnQty(q => ({ ...q, [item.id]: Math.max(0, Math.min(item.quantity, Number(e.target.value))) }))}
+                            className="w-16 px-2 py-1 bg-background border border-border rounded text-right"
+                            aria-label={`Return qty for ${item.product?.name}`} />
+                          <span className="text-muted-foreground">/ {item.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
                     <textarea value={returnReason} onChange={e => setReturnReason(e.target.value)}
                       placeholder="Reason for return (optional)..." rows={2}
                       className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-2 focus:ring-destructive outline-none resize-none" />
@@ -240,29 +286,26 @@ function ReceiptModal({ sale, onClose, refetch }: { sale: any; onClose: () => vo
 
 // ── POS Modal with Barcode Scanner ───────────────────────────────────────────
 
-function POSModal({ open, onClose, products, customers, refetch }: any) {
-  const [cart, setCart]           = useState<CartItem[]>([]);
+function POSModal({ open, onClose, products, customers, refetch, onCompleted }: any) {
+  const [cart, setCart]             = useState<CartItem[]>([]);
   const [customerId, setCustomerId] = useState('');
-  const [search, setSearch]       = useState('');
-  const [createSale, { loading }] = useMutation(CREATE_SALE);
+  const [customerQuery, setCustomerQuery] = useState('');
+  const [search, setSearch]         = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [discountPct, setDiscountPct] = useState(0);
+  const [tendered, setTendered]     = useState('');
+  const [createSale, { loading }]   = useMutation(CREATE_SALE);
   const { success, error: toastError } = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Barcode scanner: hardware scanners fire characters rapidly then Enter
   useEffect(() => {
     if (!open) return;
     let buf = '';
     let timer: ReturnType<typeof setTimeout>;
-
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && buf.length >= 4) {
-        // Try to match by barcode or SKU
-        const match = (products || []).find(
-          (p: any) => p.barcode === buf || p.sku === buf
-        );
-        if (match && match.stock > 0) {
-          addToCart(match);
-        }
+        const match = (products || []).find((p: any) => p.barcode === buf || p.sku === buf);
+        if (match && match.stock > 0) addToCart(match);
         buf = '';
         clearTimeout(timer);
         return;
@@ -270,10 +313,9 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
       if (e.key.length === 1) {
         buf += e.key;
         clearTimeout(timer);
-        timer = setTimeout(() => { buf = ''; }, 80); // reset after 80ms gap
+        timer = setTimeout(() => { buf = ''; }, 80);
       }
     };
-
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('keydown', onKey); clearTimeout(timer); };
   }, [open, products]);
@@ -297,31 +339,67 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
     )
     .filter((p: any) => p.stock > 0);
 
+  const filteredCustomers = (customers || []).filter((c: any) =>
+    !customerQuery || c.name.toLowerCase().includes(customerQuery.toLowerCase()) || c.phone?.includes(customerQuery)
+  );
+
   const removeFromCart = (productId: string) => setCart(prev => prev.filter(i => i.productId !== productId));
   const updateQty = (productId: string, qty: number) => {
     if (qty <= 0) { removeFromCart(productId); return; }
     setCart(prev => prev.map(i => i.productId === productId ? { ...i, quantity: Math.min(qty, i.stock) } : i));
   };
-  const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
+  const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const discountAmt = Math.round(subtotal * (Math.min(100, Math.max(0, discountPct)) / 100) * 100) / 100;
+  const afterDiscount = Math.max(0, subtotal - discountAmt);
+  const vat = Math.round(afterDiscount * 0.15 * 100) / 100;
+  const grandTotal = Math.round((afterDiscount + vat) * 100) / 100;
+  const tenderedNum = Number(tendered);
+  const changeDue = paymentMethod === 'CASH' && tenderedNum >= grandTotal
+    ? Math.round((tenderedNum - grandTotal) * 100) / 100
+    : 0;
+
+  const resetCart = () => {
+    setCart([]); setCustomerId(''); setCustomerQuery(''); setDiscountPct(0); setTendered(''); setPaymentMethod('CASH');
+  };
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
-    // Generate a per-checkout idempotency key to prevent duplicate sales on retry
+    if (paymentMethod === 'CREDIT' && !customerId) {
+      toastError('Customer required', 'Select a customer for credit (utang) sales.');
+      return;
+    }
+    const factor = subtotal > 0 ? afterDiscount / subtotal : 1;
+    const items = cart.map(i => ({
+      productId: i.productId,
+      quantity: i.quantity,
+      price: Math.round(i.price * factor * 100) / 100,
+    }));
+    const paymentAmount = paymentMethod === 'CREDIT' ? 0 : grandTotal;
+    const notes = discountPct > 0 ? `DISCOUNT:${discountPct}%` : null;
     const idempotencyKey = crypto.randomUUID();
+    const variables = {
+      customerId: customerId || null,
+      items,
+      paymentMethod,
+      paymentAmount,
+      notes,
+      idempotencyKey,
+    };
+
+    if (!isBrowserOnline()) {
+      await enqueueSale(variables);
+      success('Queued offline', 'Sale will sync when the connection returns.');
+      resetCart(); onClose();
+      return;
+    }
+
     try {
-      const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
-      const totalWithVAT = Math.round(subtotal * 1.15 * 100) / 100;
-      const result = await createSale({
-        variables: {
-          customerId:     customerId || null,
-          items:          cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
-          paymentMethod:  'CASH',
-          paymentAmount:  totalWithVAT,
-          idempotencyKey,
-        },
-      });
-      success('Sale completed!', `Invoice: ${result.data.createSale.invoiceNo} — ${fmt(result.data.createSale.totalAmount)}`);
-      setCart([]); setCustomerId(''); refetch(); onClose();
+      const result = await createSale({ variables });
+      const sale = result.data.createSale;
+      success('Sale completed!', `Invoice: ${sale.invoiceNo} — ${fmt(sale.totalAmount)}`);
+      resetCart(); refetch(); onClose();
+      onCompleted?.(sale);
     } catch (e: any) { toastError('Sale failed', e.message); }
   };
 
@@ -331,19 +409,21 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
         className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col">
+          className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-5xl h-[88vh] flex flex-col">
           <div className="flex items-center justify-between p-5 border-b border-border">
-            <h2 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart size={20} className="text-primary" /> New Sale</h2>
+            <h2 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart size={20} className="text-primary" /> Checkout</h2>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground flex items-center gap-1.5 hidden sm:flex">
-                <Barcode size={13} /> Barcode scanner ready
+              {!isBrowserOnline() && (
+                <span className="text-xs text-amber-700 flex items-center gap-1"><WifiOff size={13} /> Offline — sales queue locally</span>
+              )}
+              <span className="text-xs text-muted-foreground hidden sm:flex items-center gap-1.5">
+                <Barcode size={13} /> Scanner ready
               </span>
-              <button onClick={onClose}><X size={20} className="text-muted-foreground" /></button>
+              <button onClick={onClose} aria-label="Close checkout"><X size={20} className="text-muted-foreground" /></button>
             </div>
           </div>
-          <div className="flex flex-1 overflow-hidden">
-            {/* Product grid */}
-            <div className="flex-1 flex flex-col border-r border-border">
+          <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
+            <div className="flex-1 flex flex-col border-r border-border min-h-0">
               <div className="p-3 border-b border-border">
                 <div className="relative">
                   <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -353,11 +433,13 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-2 content-start">
-                {filteredProducts.map((p: any) => (
+                {filteredProducts.length === 0 ? (
+                  <p className="col-span-2 text-sm text-muted-foreground text-center py-10">No in-stock products match.</p>
+                ) : filteredProducts.map((p: any) => (
                   <button key={p.id} onClick={() => addToCart(p)}
                     className="text-left p-3 bg-background border border-border rounded-lg hover:border-primary hover:bg-primary/5 transition-all flex gap-2.5">
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.name} className="w-10 h-10 rounded object-cover shrink-0 border border-border" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      <img src={p.imageUrl} alt="" className="w-10 h-10 rounded object-cover shrink-0 border border-border" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     ) : (
                       <div className="w-10 h-10 bg-primary/10 rounded flex items-center justify-center text-primary shrink-0"><Package size={16} /></div>
                     )}
@@ -370,43 +452,70 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
                 ))}
               </div>
             </div>
-            {/* Cart */}
-            <div className="w-72 flex flex-col">
-              <div className="p-3 border-b border-border">
+            <div className="w-full md:w-80 flex flex-col min-h-0">
+              <div className="p-3 border-b border-border space-y-2">
+                <input value={customerQuery} onChange={e => setCustomerQuery(e.target.value)}
+                  placeholder="Search customer…"
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary" />
                 <select value={customerId} onChange={e => setCustomerId(e.target.value)}
                   className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary">
-                  <option value="">Walk-in Customer</option>
-                  {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <option value="">Walk-in customer</option>
+                  {filteredCustomers.map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}{c.currentDebt > 0 ? ` · debt ${fmt(c.currentDebt)}` : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {cart.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground text-sm">Click products or scan barcode</div>
+                  <div className="text-center py-12 text-muted-foreground text-sm">Add products or scan a barcode</div>
                 ) : cart.map(item => (
                   <div key={item.productId} className="bg-background border border-border rounded-lg p-3">
                     <div className="flex justify-between items-start mb-2">
                       <p className="text-sm font-medium text-foreground line-clamp-1 flex-1">{item.name}</p>
-                      <button onClick={() => removeFromCart(item.productId)} className="text-muted-foreground hover:text-destructive ml-2"><X size={14} /></button>
+                      <button onClick={() => removeFromCart(item.productId)} className="text-muted-foreground hover:text-destructive ml-2" aria-label="Remove"><X size={14} /></button>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1">
-                        <button onClick={() => updateQty(item.productId, item.quantity - 1)} className="w-6 h-6 border border-border rounded text-sm hover:bg-muted flex items-center justify-center">−</button>
+                        <button onClick={() => updateQty(item.productId, item.quantity - 1)} className="w-6 h-6 border border-border rounded text-sm hover:bg-muted">−</button>
                         <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                        <button onClick={() => updateQty(item.productId, item.quantity + 1)} className="w-6 h-6 border border-border rounded text-sm hover:bg-muted flex items-center justify-center">+</button>
+                        <button onClick={() => updateQty(item.productId, item.quantity + 1)} className="w-6 h-6 border border-border rounded text-sm hover:bg-muted">+</button>
                       </div>
-                      <span className="text-sm font-semibold text-foreground">{fmt(item.price * item.quantity)}</span>
+                      <span className="text-sm font-semibold">{fmt(item.price * item.quantity)}</span>
                     </div>
                   </div>
                 ))}
               </div>
-              <div className="p-4 border-t border-border">
-                <div className="flex justify-between items-center mb-4">
-                  <span className="font-semibold text-foreground">Total</span>
-                  <span className="text-xl font-bold text-primary">{fmt(total)}</span>
+              <div className="p-4 border-t border-border space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs text-muted-foreground">Discount %</label>
+                  <input type="number" min={0} max={100} value={discountPct}
+                    onChange={e => setDiscountPct(Number(e.target.value) || 0)}
+                    className="w-20 px-2 py-1 bg-background border border-border rounded text-sm text-right" />
+                </div>
+                <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm">
+                  {PAYMENT_METHODS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                {paymentMethod === 'CASH' && (
+                  <input type="number" min={0} value={tendered} onChange={e => setTendered(e.target.value)}
+                    placeholder="Cash tendered"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm" />
+                )}
+                <div className="text-xs space-y-1 text-muted-foreground">
+                  <div className="flex justify-between"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
+                  {discountAmt > 0 && <div className="flex justify-between text-amber-700"><span>Discount</span><span>−{fmt(discountAmt)}</span></div>}
+                  <div className="flex justify-between"><span>VAT 15%</span><span>{fmt(vat)}</span></div>
+                  {changeDue > 0 && <div className="flex justify-between"><span>Change</span><span>{fmt(changeDue)}</span></div>}
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Total</span>
+                  <span className="text-xl font-bold text-primary">{fmt(grandTotal)}</span>
                 </div>
                 <button onClick={handleCheckout} disabled={loading || cart.length === 0}
-                  className="w-full bg-primary text-primary-foreground py-2.5 rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                  <Receipt size={16} />{loading ? 'Processing...' : 'Complete Sale'}
+                  className="w-full bg-primary text-primary-foreground py-2.5 rounded-lg font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2">
+                  <Receipt size={16} />{loading ? 'Processing…' : 'Complete sale'}
                 </button>
               </div>
             </div>
@@ -417,63 +526,120 @@ function POSModal({ open, onClose, products, customers, refetch }: any) {
   );
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
-
 export default function Sales() {
   const [posOpen, setPosOpen]         = useState(false);
   const [receiptSale, setReceiptSale] = useState<any>(null);
   const [search, setSearch]           = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'refunded'>('all');
+  const [payFilter, setPayFilter]     = useState('');
+  const [fromDate, setFromDate]       = useState('');
+  const [toDate, setToDate]           = useState('');
   const [page, setPage]               = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const { data, loading, refetch }    = useQuery(GET_SALES_DATA, { fetchPolicy: 'cache-and-network' });
+  const [createSale]                  = useMutation(CREATE_SALE);
   const { t }                         = useLangContext();
   const sales = data?.sales || [];
 
-  const filtered = sales.filter((s: any) =>
-    s.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
-    s.customer?.name?.toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    const flush = async () => {
+      if (!isBrowserOnline()) {
+        setPendingCount((await listPendingSales()).length);
+        return;
+      }
+      const pending = await listPendingSales();
+      setPendingCount(pending.length);
+      for (const row of pending) {
+        try {
+          await createSale({ variables: row.variables });
+          await removePendingSale(row.id);
+        } catch (e: any) {
+          await markPendingFailed(row.id, e.message);
+        }
+      }
+      setPendingCount((await listPendingSales()).length);
+      refetch();
+    };
+    void flush();
+    window.addEventListener('online', flush);
+    return () => window.removeEventListener('online', flush);
+  }, [createSale, refetch]);
+
+  const filtered = sales.filter((s: any) => {
+    const q = search.toLowerCase();
+    const matchQ = s.invoiceNo.toLowerCase().includes(q) || s.customer?.name?.toLowerCase().includes(q);
+    const isReturned = s.returns?.length > 0;
+    const matchStatus = statusFilter === 'all' || (statusFilter === 'refunded' ? isReturned : !isReturned);
+    const matchPay = !payFilter || s.paymentMethod === payFilter;
+    const created = new Date(s.createdAt).getTime();
+    const matchFrom = !fromDate || created >= new Date(fromDate).getTime();
+    const matchTo = !toDate || created <= new Date(toDate + 'T23:59:59').getTime();
+    return matchQ && matchStatus && matchPay && matchFrom && matchTo;
+  });
   const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const handleSearch = (v: string) => { setSearch(v); setPage(0); };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-foreground">{t('sales')}</h2>
           <p className="text-sm text-muted-foreground">{sales.length} total transactions</p>
         </div>
-        <button onClick={() => setPosOpen(true)}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors">
-          <Plus size={16} /> {t('newSale')}
-        </button>
+        <div className="flex items-center gap-2">
+          {pendingCount > 0 && (
+            <span className="text-xs bg-amber-500/10 text-amber-700 px-2 py-1 rounded-full">{pendingCount} offline queued</span>
+          )}
+          <button onClick={() => setPosOpen(true)}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium">
+            <Plus size={16} /> {t('newSale')}
+          </button>
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-border bg-muted/20 flex items-center gap-3">
-          <div className="relative max-w-sm flex-1">
+        <div className="p-4 border-b border-border bg-muted/20 flex items-center gap-3 flex-wrap">
+          <div className="relative max-w-sm flex-1 min-w-[180px]">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input value={search} onChange={e => handleSearch(e.target.value)}
               placeholder="Search invoice or customer..."
               className="w-full pl-9 pr-4 py-2 bg-background border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
-          <p className="text-xs text-muted-foreground hidden sm:block">Click a row to view receipt</p>
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value as any); setPage(0); }}
+            className="px-3 py-2 bg-background border border-border rounded-lg text-sm">
+            <option value="all">All statuses</option>
+            <option value="completed">Completed</option>
+            <option value="refunded">Refunded</option>
+          </select>
+          <select value={payFilter} onChange={e => { setPayFilter(e.target.value); setPage(0); }}
+            className="px-3 py-2 bg-background border border-border rounded-lg text-sm">
+            <option value="">All payments</option>
+            {PAYMENT_METHODS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+          <input type="date" value={fromDate} onChange={e => { setFromDate(e.target.value); setPage(0); }}
+            className="px-3 py-2 bg-background border border-border rounded-lg text-sm" aria-label="From date" />
+          <input type="date" value={toDate} onChange={e => { setToDate(e.target.value); setPage(0); }}
+            className="px-3 py-2 bg-background border border-border rounded-lg text-sm" aria-label="To date" />
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-muted/30 text-muted-foreground text-xs uppercase border-b border-border">
-              <tr>{[t('invoice'), t('customer'), 'Items', t('total'), 'Date', t('cashier'), t('status'), ''].map(h =>
+              <tr>{[t('invoice'), t('customer'), 'Items', t('total'), 'Pay', 'Date', t('cashier'), t('status'), ''].map(h =>
                 <th key={h} className="px-5 py-3 whitespace-nowrap">{h}</th>
               )}</tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="text-center py-12">
+                <tr><td colSpan={9} className="text-center py-12">
                   <div className="flex justify-center"><div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>
                 </td></tr>
               ) : paginated.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">No sales found.</td></tr>
+                <tr><td colSpan={9} className="text-center py-16 text-muted-foreground text-sm">
+                  <p className="font-medium text-foreground">No sales found</p>
+                  <p className="text-sm mt-1">Start a checkout to record the first transaction.</p>
+                </td></tr>
               ) : paginated.map((s: any, i: number) => {
                 const isReturned = s.returns?.length > 0;
                 return (
@@ -490,6 +656,7 @@ export default function Sales() {
                         {fmt(s.totalAmount)}
                       </span>
                     </td>
+                    <td className="px-5 py-4 text-xs text-muted-foreground">{s.paymentMethod || 'CASH'}</td>
                     <td className="px-5 py-4 text-xs text-muted-foreground">{new Date(s.createdAt).toLocaleString()}</td>
                     <td className="px-5 py-4 text-xs text-muted-foreground">{s.user?.name}</td>
                     <td className="px-5 py-4">
@@ -521,19 +688,11 @@ export default function Sales() {
           </p>
           <div className="flex items-center gap-2">
             <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-              className="flex items-center gap-1 px-3 py-1.5 border border-border rounded-lg text-xs font-medium hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              className="flex items-center gap-1 px-3 py-1.5 border border-border rounded-lg text-xs font-medium hover:bg-muted disabled:opacity-40">
               <ChevronLeft size={14} /> Prev
             </button>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: pageCount }, (_, i) => (
-                <button key={i} onClick={() => setPage(i)}
-                  className={`w-7 h-7 rounded-md text-xs font-medium transition-colors ${page === i ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}>
-                  {i + 1}
-                </button>
-              ))}
-            </div>
             <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1}
-              className="flex items-center gap-1 px-3 py-1.5 border border-border rounded-lg text-xs font-medium hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              className="flex items-center gap-1 px-3 py-1.5 border border-border rounded-lg text-xs font-medium hover:bg-muted disabled:opacity-40">
               Next <ChevronRight size={14} />
             </button>
           </div>
@@ -541,7 +700,8 @@ export default function Sales() {
       </div>
 
       <POSModal open={posOpen} onClose={() => setPosOpen(false)}
-        products={data?.products} customers={data?.customers} refetch={refetch} />
+        products={data?.products} customers={data?.customers} refetch={refetch}
+        onCompleted={(sale: any) => setReceiptSale({ ...sale, createdAt: new Date().toISOString(), user: { name: 'You' }, returns: [] })} />
 
       {receiptSale && (
         <ReceiptModal sale={receiptSale} onClose={() => setReceiptSale(null)} refetch={refetch} />

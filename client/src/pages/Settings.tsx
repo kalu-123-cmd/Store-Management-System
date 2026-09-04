@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Settings as SettingsIcon, Globe, Bell, Moon, Sun,
   Palette, Database, Shield, Save,
-  Volume2, VolumeX, Mail,
+  Volume2, VolumeX, Mail, Download, Upload,
 } from 'lucide-react';
 import { useLangContext } from '../lib/LangContext';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -55,7 +55,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 export default function Settings() {
   const { lang, setLang } = useLangContext();
   const [dark, setDark] = useDarkMode();
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const { isAdmin } = useRole();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
@@ -78,6 +78,46 @@ export default function Settings() {
     localStorage.setItem('store-phone', storePhone);
     localStorage.setItem('store-address', storeAddress);
     success('Settings saved', 'Store information updated.');
+  };
+
+  const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:4000/graphql').replace(/\/graphql\/?$/, '');
+
+  const downloadBackup = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${apiBase}/admin/backup`, {
+        headers: { Authorization: token ? `Bearer ${token}` : '' },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `storeos-backup-${new Date().toISOString().slice(0, 10)}.db`;
+      a.click();
+      URL.revokeObjectURL(url);
+      success('Backup downloaded', 'Keep this file somewhere safe.');
+    } catch (e: any) {
+      toastError('Backup failed', e.message || 'Could not download backup');
+    }
+  };
+
+  const restoreBackup = async (file: File) => {
+    if (!window.confirm('Restore will replace the live SQLite database. Continue?')) return;
+    try {
+      const token = localStorage.getItem('token');
+      const body = new FormData();
+      body.append('file', file);
+      const res = await fetch(`${apiBase}/admin/restore`, {
+        method: 'POST',
+        headers: { Authorization: token ? `Bearer ${token}` : '' },
+        body,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      success('Database restored', 'Reload the app after the server reconnects.');
+    } catch (e: any) {
+      toastError('Restore failed', e.message || 'Could not restore backup');
+    }
   };
 
   const ic = 'w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary outline-none';
@@ -163,6 +203,25 @@ export default function Settings() {
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
               <Save size={14} /> Save Store Info
             </button>
+          </div>
+        </Section>
+      )}
+
+      {isAdmin && (
+        <Section title="Backup & restore" icon={<Database size={14} />}>
+          <p className="text-xs text-muted-foreground">
+            Downloads a copy of the SQLite file used on this server (including Render disk at /data/prod.db).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={downloadBackup}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium">
+              <Download size={14} /> Download backup
+            </button>
+            <label className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium cursor-pointer hover:bg-muted">
+              <Upload size={14} /> Restore .db
+              <input type="file" accept=".db,.sqlite,.sqlite3" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) void restoreBackup(f); e.target.value = ''; }} />
+            </label>
           </div>
         </Section>
       )}

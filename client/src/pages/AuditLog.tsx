@@ -12,8 +12,8 @@ import { useRole } from '../hooks/useRole';
 // ── GraphQL ───────────────────────────────────────────────────────────────────
 
 const GET_AUDIT_LOGS = gql`
-  query GetAuditLogs {
-    activityLogs {
+  query GetAuditLogs($startDate: String, $endDate: String) {
+    activityLogs(startDate: $startDate, endDate: $endDate) {
       id action details createdAt
       ipAddress entityType entityId
       oldValue newValue changes
@@ -318,10 +318,18 @@ export default function AuditLog() {
   const [entityFilter, setEntityFilter] = useState('');
   const [userFilter,   setUserFilter]   = useState('');
   const [ipFilter,     setIpFilter]     = useState('');
+  const [startDate,    setStartDate]    = useState('');
+  const [endDate,      setEndDate]      = useState('');
   const [selectedLog,  setSelectedLog]  = useState<any>(null);
   const [showFilters,  setShowFilters]  = useState(false);
 
-  const { data, loading, refetch } = useQuery(GET_AUDIT_LOGS, { fetchPolicy: 'cache-and-network' });
+  const { data, loading, refetch } = useQuery(GET_AUDIT_LOGS, {
+    variables: {
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+    },
+    fetchPolicy: 'cache-and-network',
+  });
   const allLogs: any[] = data?.activityLogs || [];
 
   if (!isAdmin && !isManager) {
@@ -463,6 +471,16 @@ export default function AuditLog() {
                     <option value="">All Users</option>
                     {uniqueUsers.map(u=><option key={u} value={u}>{u}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">From</label>
+                  <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"/>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">To</label>
+                  <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"/>
                 </div>
                 {/* IP filter */}
                 <div>

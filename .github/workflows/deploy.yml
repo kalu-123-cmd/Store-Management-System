@@ -84,6 +84,11 @@ jobs:
         env:
           DATABASE_URL: file:./prisma/dev.db
 
+      - name: Unit tests
+        run: npm test
+        env:
+          DATABASE_URL: file:./prisma/dev.db
+
   # ── Deploy Frontend → Vercel ──────────────────────────────────────
   # Only runs on push to main (not on PRs)
 

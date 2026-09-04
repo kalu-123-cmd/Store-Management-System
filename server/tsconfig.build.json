@@ -20,6 +20,7 @@
     "node_modules",
     "dist",
     "src/agents/**",
+    "src/__tests__/**",
     "src/services/anomalyService.ts",
     "src/services/batchService.ts",
     "src/services/landedCostService.ts",

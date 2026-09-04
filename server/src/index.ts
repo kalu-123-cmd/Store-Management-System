@@ -13,6 +13,8 @@ import fs from 'fs';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { createDataLoaders } from './dataloaders';
+import { depthLimit } from './graphql/depthLimit';
+import { specifiedRules } from 'graphql';
 
 dotenv.config();
 
@@ -74,6 +76,24 @@ const strictLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+const mutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 80,
+  message: 'Too many mutations from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+function graphqlMutationGate(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const query = typeof (req.body as { query?: string } | undefined)?.query === 'string'
+    ? (req.body as { query: string }).query
+    : '';
+  if (/\bmutation\b/i.test(query)) {
+    return mutationLimiter(req, res, next);
+  }
+  return next();
+}
 
 // ── Uploads directory ─────────────────────────────────────────────────────────
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -349,6 +369,73 @@ app.delete('/documents/:id', async (req, res) => {
   }
 });
 
+function sqliteFilePath(): string | null {
+  const url = process.env.DATABASE_URL || '';
+  if (url.startsWith('file:')) {
+    const raw = url.slice('file:'.length);
+    if (path.isAbsolute(raw) || raw.startsWith('/data/')) return raw;
+    return path.resolve(__dirname, '..', raw.replace(/^\.\//, ''));
+  }
+  const candidates = [
+    path.join(__dirname, '../prisma/dev.db'),
+    path.join(__dirname, '../prisma/data/prod.db'),
+    '/data/prod.db',
+  ];
+  return candidates.find(p => fs.existsSync(p)) || null;
+}
+
+app.get('/admin/backup', strictLimiter, (req, res) => {
+  const user = extractUser(req.headers.authorization || '');
+  if (!user || user['role'] !== 'ADMIN') {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  const dbPath = sqliteFilePath();
+  if (!dbPath || !fs.existsSync(dbPath)) {
+    return res.status(404).json({ error: 'SQLite database file not found' });
+  }
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="storeos-backup-${stamp}.db"`);
+  fs.createReadStream(dbPath).pipe(res);
+});
+
+const restoreUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadsDir),
+    filename: (_req, _file, cb) => cb(null, `restore-${Date.now()}.db`),
+  }),
+  limits: { fileSize: 80 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext === '.db' || ext === '.sqlite' || ext === '.sqlite3') cb(null, true);
+    else cb(new Error('Only .db / .sqlite backup files are allowed'));
+  },
+});
+
+app.post('/admin/restore', strictLimiter, restoreUpload.single('file'), async (req, res) => {
+  try {
+    const user = extractUser(req.headers.authorization || '');
+    if (!user || user['role'] !== 'ADMIN') {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'No backup file uploaded' });
+    const dbPath = sqliteFilePath();
+    if (!dbPath) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'SQLite path could not be resolved' });
+    }
+    await prisma.$disconnect();
+    fs.copyFileSync(req.file.path, dbPath);
+    fs.unlink(req.file.path, () => {});
+    await prisma.$connect();
+    res.json({ success: true, restoredTo: dbPath });
+  } catch (error) {
+    console.error('Restore error:', error);
+    res.status(500).json({ error: 'Restore failed' });
+  }
+});
+
 // ── Database readiness + optional seed ───────────────────────────────────────
 async function ensureDatabaseReady() {
   const { execSync } = await import('child_process');
@@ -391,9 +478,8 @@ async function startServer() {
   const server = new ApolloServer({
     typeDefs,
     resolvers,
-    // csrfPrevention is intentionally false — all clients authenticate via Bearer token,
-    // not cookies, so CSRF is not a vector here.
     csrfPrevention: false,
+    validationRules: [...specifiedRules, depthLimit(12)],
   });
 
   await server.start();
@@ -411,6 +497,7 @@ async function startServer() {
     '/graphql',
     cors<cors.CorsRequest>(corsOptions),
     express.json(),
+    graphqlMutationGate,
     expressMiddleware(server, {
       context: async ({ req }) => {
         const user = extractUser(req.headers.authorization || '');

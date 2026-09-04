@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tsx --test src/__tests__/financials.test.ts",
     "start": "node scripts/startProduction.cjs",
     "start:dev-prod": "npx prisma db push && node dist/index.js",
     "dev": "tsx watch src/index.ts",
