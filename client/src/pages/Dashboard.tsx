@@ -16,6 +16,7 @@ import {
 const GET_DASHBOARD_MAIN = gql`
   query GetDashboardMain($year: Int, $month: Int) {
     dashboardStats {
+      id
       totalProducts
       totalCategories
       totalSuppliers
@@ -38,7 +39,7 @@ const GET_DASHBOARD_MAIN = gql`
     }
     sales {
       id invoiceNo totalAmount createdAt
-      customer { name }
+      customer { id name }
     }
     monthlySalesByDay(year: $year, month: $month) {
       date revenue profit count

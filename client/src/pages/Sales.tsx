@@ -16,7 +16,7 @@ const GET_SALES_DATA = gql`
   query GetSalesData {
     sales {
       id invoiceNo totalAmount createdAt
-      customer { name email phone }
+      customer { id name email phone }
       user { name }
       items { id quantity price product { name sku } }
       returns { id refundAmount reason createdAt }

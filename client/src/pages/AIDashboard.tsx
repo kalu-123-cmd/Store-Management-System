@@ -15,6 +15,7 @@ import { fmt, fmtInt } from '../lib/currency';
 const GET_AI_OVERVIEW = gql`
   query GetAIOverview {
     dashboardStats {
+      id
       todaySales
       yesterdaySales
       weekSales
@@ -45,7 +46,7 @@ const GET_AI_OVERVIEW = gql`
       invoiceNo
       totalAmount
       createdAt
-      customer { name }
+      customer { id name }
     }
   }
 `;
@@ -53,6 +54,7 @@ const GET_AI_OVERVIEW = gql`
 const GET_AI_ALERTS = gql`
   query GetAIAlerts {
     dashboardStats {
+      id
       lowStockCount
       outOfStockCount
       expiringCount
@@ -728,11 +730,11 @@ export default function AIDashboard() {
                 </button>
               </div>
               <div className="space-y-3">
-                {salesByCategory.slice(0, 6).map((category) => {
+                {salesByCategory.slice(0, 6).map((category, index) => {
                   const denom = stats.monthlyRevenue > 0 ? stats.monthlyRevenue : 1;
                   return (
                     <div
-                      key={category.category}
+                      key={`${category.category}-${index}`}
                       className="flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
                     >
                       <div className="flex items-center space-x-3">

@@ -159,7 +159,7 @@ export async function processStockOutAtomic(
   request: StockOutRequest
 ): Promise<StockOutResult> {
   try {
-    return await prisma.$transaction(async (tx) => {
+    const processStockOut = async (tx: any): Promise<StockOutResult> => {
       // Step 1: Acquire pessimistic lock on product record
       // For PostgreSQL, use raw SQL FOR UPDATE to prevent race conditions
       const isPostgreSQL = process.env.DATABASE_URL?.includes('postgresql');
@@ -331,7 +331,11 @@ export async function processStockOutAtomic(
         totalAmount: financials.totalAmount.toString(),
         unitPrice: financials.unitPrice.toString(),
       };
-    });
+    };
+
+    return typeof (prisma as any).$transaction === 'function'
+      ? await (prisma as any).$transaction(processStockOut)
+      : await processStockOut(prisma as any);
   } catch (error) {
     console.error('Stock out atomic operation failed:', error);
     return {

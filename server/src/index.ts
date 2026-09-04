@@ -28,9 +28,14 @@ if (onRender || postgresUrl) {
 
 const prisma = new PrismaClient();
 const app = express();
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 const PORT = process.env.PORT || 4000;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_jwt_key_12345';
+
+function getRequestIp(req: { ip?: string }) {
+  return (req.ip || 'unknown').replace(/^::ffff:/, '');
+}
 
 // Security middleware
 app.use(helmet({
@@ -46,9 +51,6 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-
-app.use('/graphql', limiter);
-app.use('/upload', limiter);
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -120,7 +122,13 @@ const corsOptions: cors.CorsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
+// Apply CORS before route-specific middleware so preflight responses always
+// include the required Access-Control-Allow-* headers.
 app.use(cors(corsOptions));
+app.options('/graphql', cors(corsOptions));
+app.use('/graphql', limiter);
+app.use('/upload', limiter);
+
 app.use(express.json({ limit: '10mb' }));
 
 // ── Health check ──────────────────────────────────────────────────────────────
@@ -431,6 +439,17 @@ async function startServer() {
 
   await server.start();
 
+  app.get('/graphql', cors<cors.CorsRequest>(corsOptions), (_req, res) => {
+    res.json({
+      status: 'ok',
+      message: 'GraphQL endpoint is running. Send GraphQL queries with POST.',
+      endpoint: '/graphql',
+      example: {
+        query: '{ __typename }',
+      },
+    });
+  });
+
   app.use(
     '/graphql',
     cors<cors.CorsRequest>(corsOptions),
@@ -455,6 +474,7 @@ async function startServer() {
         return {
           prisma,
           user,
+          requestIp: getRequestIp(req),
           loaders,
         };
       },

@@ -16,7 +16,7 @@ const GET_REPORTS = gql`
   query GetReports($startDate: String, $endDate: String) {
     sales(startDate: $startDate, endDate: $endDate) {
       id invoiceNo totalAmount createdAt
-      customer { name }
+      customer { id name }
       items { quantity price product { name costPrice } }
     }
     products {

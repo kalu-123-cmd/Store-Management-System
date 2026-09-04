@@ -160,8 +160,8 @@ export class PaymentReconciliationService {
             customerId: saleData.customerId,
             paymentMethod: tenders.length === 1 ? tenders[0].method : 'MULTI_TENDER',
             paymentStatus: PaymentStatus.PENDING,
+            user: { connect: { id: cashierId } },
             branchId: saleData.branchId,
-            cashierId,
             notes: saleData.notes,
           },
         });

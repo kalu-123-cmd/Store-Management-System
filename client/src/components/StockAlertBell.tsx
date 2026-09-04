@@ -7,10 +7,22 @@ import { useToast } from './Toast';
 import { useLangContext } from '../lib/LangContext';
 import { t } from '../lib/i18n';
 
+let audioContext: AudioContext | null = null;
+
+function unlockAudio() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  if (audioContext.state === 'suspended') {
+    void audioContext.resume();
+  }
+}
+
 // ── Bell sound using Web Audio API (no external files needed) ─────────────────
 function playBellSound(type: 'out' | 'low' = 'low') {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (!audioContext || audioContext.state !== 'running') return;
+    const ctx = audioContext;
 
     const playTone = (freq: number, startTime: number, duration: number, gain: number) => {
       const oscillator = ctx.createOscillator();
@@ -55,6 +67,16 @@ export default function StockAlertBell() {
   const panelRef = useRef<HTMLDivElement>(null);
   const { warning, error: toastError } = useToast();
   const { lang } = useLangContext();
+
+  useEffect(() => {
+    const handleUserGesture = () => unlockAudio();
+    window.addEventListener('pointerdown', handleUserGesture, { once: true });
+    window.addEventListener('keydown', handleUserGesture, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', handleUserGesture);
+      window.removeEventListener('keydown', handleUserGesture);
+    };
+  }, []);
 
   const toggleSound = (e: React.MouseEvent) => {
     e.stopPropagation();

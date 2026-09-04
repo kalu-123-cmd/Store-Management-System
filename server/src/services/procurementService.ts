@@ -70,7 +70,9 @@ export interface CreateProcurementRequestInput {
   userId: string;
   organizationId?: string;
   items: Array<{
-    productId: string;
+    productId?: string;
+    description?: string;
+    unitOfMeasure?: string;
     quantity: number;
     estimatedUnitCost: number;
     notes?: string;
@@ -127,8 +129,26 @@ export async function createProcurementRequest(
 ) {
   try {
     return await prisma.$transaction(async (tx) => {
+      if (!input.requiredBy || Number.isNaN(input.requiredBy.getTime())) {
+        throw new Error('A valid required-by date is required');
+      }
+      if (!input.items.length) {
+        throw new Error('At least one procurement item is required');
+      }
+      for (const item of input.items) {
+        if (!item.description?.trim() && !item.productId) {
+          throw new Error('Each procurement item needs a description or product');
+        }
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+          throw new Error('Procurement item quantities must be positive whole numbers');
+        }
+        if (!Number.isFinite(item.estimatedUnitCost) || item.estimatedUnitCost < 0) {
+          throw new Error('Procurement item costs must be valid non-negative numbers');
+        }
+      }
+
       // Validate products exist
-      const productIds = input.items.map(item => item.productId);
+      const productIds = input.items.flatMap(item => item.productId ? [item.productId] : []);
       const products = await tx.product.findMany({
         where: { id: { in: productIds } },
         select: { id: true, name: true, costPrice: true },
@@ -137,8 +157,8 @@ export async function createProcurementRequest(
       const productMap = new Map(products.map(p => [p.id, p]));
 
       for (const item of input.items) {
-        const product = productMap.get(item.productId);
-        if (!product) {
+        const product = item.productId ? productMap.get(item.productId) : undefined;
+        if (item.productId && !product) {
           throw new Error(`Product ${item.productId} not found`);
         }
       }
@@ -165,9 +185,9 @@ export async function createProcurementRequest(
           estimatedTotal,
           items: {
             create: input.items.map(item => ({
-              description: item.notes || 'Item',
+              description: item.description?.trim() || productMap.get(item.productId || '')?.name || item.notes || 'Item',
               quantity: item.quantity,
-              unitOfMeasure: 'PCS',
+              unitOfMeasure: item.unitOfMeasure || 'PCS',
               estimatedUnitCost: item.estimatedUnitCost,
               estimatedTotal: item.quantity * item.estimatedUnitCost,
               notes: item.notes,

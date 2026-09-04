@@ -144,6 +144,7 @@ export const typeDefs = `#graphql
   }
 
   type DashboardStats {
+    id: ID!
     totalProducts: Int!
     totalCategories: Int!
     totalSuppliers: Int!
@@ -1121,7 +1122,9 @@ export const typeDefs = `#graphql
   }
 
   input ProcurementRequestItemInput {
-    productId: String!
+    productId: String
+    description: String
+    unitOfMeasure: String
     quantity: Int!
     estimatedUnitCost: Float!
     notes: String

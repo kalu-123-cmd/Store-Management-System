@@ -68,6 +68,7 @@ export interface SaleTransactionResult {
   vatAmount?: string;
   cogsAmount?: string;
   profitAmount?: string;
+  creditAmount?: number;
   items?: Array<{
     id: string;
     productId: string;
@@ -227,6 +228,8 @@ export async function createSaleTransaction(
           vatAmount: vatAmount.toNumber(),
           totalAmount: totalAmount.toNumber(),
           ...(request.customerId ? { customer: { connect: { id: request.customerId } } } : {}),
+          user: { connect: { id: request.cashierId } },
+          ...(request.branchId ? { branchId: request.branchId } : {}),
           paymentMethod: request.paymentMethod,
           paymentStatus: isPartialPayment ? 'PARTIAL' : 'PAID',
           notes: request.notes,
@@ -240,7 +243,7 @@ export async function createSaleTransaction(
           await tx.customer.update({
             where: { id: request.customerId },
             data: {
-              creditBalance: customer.creditBalance + creditAmount.toNumber(),
+              currentDebt: customer.currentDebt + creditAmount.toNumber(),
             },
           });
         }

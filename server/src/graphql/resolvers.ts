@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { sendSaleReceipt, sendLowStockAlert } from '../email';
 import { createSaleTransaction, processSaleReturn } from '../services/posTransactionService';
+import { calculateFinancials } from '../services/inventoryService';
 import { createProcurementService } from '../services/procurementService';
 import { CSVImportService } from '../services/csvImportService';
 
@@ -252,6 +253,7 @@ export const resolvers = {
         const outstandingPayables = Math.abs(payables.reduce((sum: number, p: any) => sum + (p.currentBalance || 0), 0));
 
         return {
+          id: 'dashboard-stats',
           totalProducts: products.length,
           totalCategories: categories,
           totalSuppliers: suppliers,
@@ -275,6 +277,7 @@ export const resolvers = {
       } catch (error) {
         console.error('Dashboard stats error:', error);
         return {
+          id: 'dashboard-stats',
           totalProducts: 0,
           totalCategories: 0,
           totalSuppliers: 0,
@@ -1547,7 +1550,7 @@ export const resolvers = {
       return { token, user: { ...user, createdAt: user.createdAt.toISOString() } };
     },
 
-    login: async (_: any, { email, password }: any, { prisma }: any) => {
+    login: async (_: any, { email, password }: any, { prisma, requestIp }: any) => {
       const raw = String(email || '').trim();
       const aliases: Record<string, string> = {
         'admin@storemanagement.com': 'admin@store.com',
@@ -1562,6 +1565,20 @@ export const resolvers = {
       const valid = await bcrypt.compare(password, user.password);
       if (!valid) throw new Error('Invalid credentials');
       const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+      try {
+        await prisma.activityLog.create({
+          data: {
+            userId: user.id,
+            action: 'USER_LOGGED_IN',
+            entityType: 'USER',
+            entityId: user.id,
+            details: 'User signed in',
+            ipAddress: requestIp || 'unknown',
+          },
+        });
+      } catch (auditError) {
+        console.warn('Login audit log failed:', auditError);
+      }
       return { token, user: { ...user, createdAt: user.createdAt.toISOString() } };
     },
 
@@ -1724,8 +1741,20 @@ export const resolvers = {
       if (newStock < 0) throw new Error('Insufficient stock');
 
       await prisma.product.update({ where: { id: productId }, data: { stock: newStock } });
+      const financials = calculateFinancials(product.sellingPrice, quantity);
       const txn = await prisma.transaction.create({
-        data: { productId, quantity, type, notes, userId: user.id },
+        data: {
+          productId,
+          quantity,
+          type,
+          notes,
+          userId: user.id,
+          unitPrice: financials.unitPrice.toNumber(),
+          subtotal: financials.subtotal.toNumber(),
+          vatAmount: financials.vatAmount.toNumber(),
+          totalAmount: financials.totalAmount.toNumber(),
+          clearanceStatus: 'PENDING_CLEARANCE',
+        },
         include: { product: true },
       });
       await prisma.activityLog.create({ data: { userId: user.id, action: 'STOCK_ADJUSTED', details: `${type} ${quantity} units of ${product.name}` } });
@@ -2513,7 +2542,10 @@ export const resolvers = {
         departmentId: args.departmentId,
         userId: user.id,
         organizationId: args.organizationId,
-        items: args.items || [],
+        items: (args.items || []).map((item: any) => ({
+          ...item,
+          description: item.description?.trim(),
+        })),
         justification: args.justification,
         urgency: args.urgency || 'MEDIUM',
         requiredBy: args.requiredBy ? new Date(args.requiredBy) : undefined,
@@ -2801,16 +2833,21 @@ export const resolvers = {
 
     createTender: async (_: any, args: any, { prisma, user }: any) => {
       requirePermission(user, 'tender.create', ['ADMIN', 'MANAGER']);
+      if (!args.projectName?.trim() || !args.procurementCategory?.trim() || !args.submissionDeadline) {
+        throw new Error('Project name, procurement category, and submission deadline are required');
+      }
+      const submissionDeadline = new Date(args.submissionDeadline);
+      if (Number.isNaN(submissionDeadline.getTime())) throw new Error('Submission deadline must be a valid date');
       const tenderNumber = `T-${Date.now()}`;
       return prisma.tender.create({
         data: {
           tenderNumber,
           procurementRefId: args.procurementRefId || null,
-          projectName: args.projectName,
-          procurementCategory: args.procurementCategory,
+          projectName: args.projectName.trim(),
+          procurementCategory: args.procurementCategory.trim(),
           procurementMethod: args.procurementMethod,
           marketType: args.marketType,
-          submissionDeadline: new Date(args.submissionDeadline),
+          submissionDeadline,
           bidValidityPeriod: args.bidValidityPeriod,
           bidSecurity: args.bidSecurity || null,
           currency: args.currency || 'ETB',
@@ -3058,6 +3095,14 @@ export const resolvers = {
 
     createContract: async (_: any, args: any, { prisma, user }: any) => {
       requirePermission(user, 'procurement.manage');
+      if (!args.supplierId || !args.startDate || !args.endDate || args.contractValue === undefined || args.contractValue === null || args.contractValue <= 0) {
+        throw new Error('Supplier, valid start and end dates, and a positive contract value are required');
+      }
+      const startDate = new Date(args.startDate);
+      const endDate = new Date(args.endDate);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
+        throw new Error('Contract end date must be after the start date');
+      }
       const contractNumber = `C-${Date.now()}`;
       return prisma.contract.create({
         data: {
@@ -3065,8 +3110,8 @@ export const resolvers = {
           tenderId: args.tenderId || null,
           bidId: args.bidId || null,
           supplierId: args.supplierId,
-          startDate: new Date(args.startDate),
-          endDate: new Date(args.endDate),
+          startDate,
+          endDate,
           contractValue: args.contractValue,
           currency: args.currency || 'ETB',
           paymentTerms: args.paymentTerms || null,
@@ -3562,7 +3607,7 @@ export const resolvers = {
 
     // Audit & Risk mutations (Phase 9)
 
-    createActivityLog: async (_: any, args: any, { prisma, user }: any) => {
+    createActivityLog: async (_: any, args: any, { prisma, user, requestIp }: any) => {
       requireRole(user, 'ADMIN', 'MANAGER');
       return prisma.activityLog.create({
         data: {
@@ -3574,6 +3619,7 @@ export const resolvers = {
           oldValue: args.oldValue || null,
           newValue: args.newValue || null,
           changes: args.changes || null,
+          ipAddress: requestIp || 'unknown',
         },
         include: { user: true },
       });

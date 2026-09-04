@@ -17,7 +17,7 @@ const GET_AUDIT_LOGS = gql`
       id action details createdAt
       ipAddress entityType entityId
       oldValue newValue changes
-      user { name email role }
+      user { id name email role }
     }
   }
 `;

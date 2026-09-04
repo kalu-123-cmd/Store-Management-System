@@ -209,12 +209,15 @@ function NewRequestModal({ open, onClose, refetch }: any) {
 
   const handleSubmit = async () => {
     if (!requiredBy) { toast({ type: 'error', title: 'Missing field', message: 'Required by date is needed' }); return; }
-    if (lines.some(l => !l.description)) { toast({ type: 'error', title: 'Missing field', message: 'All items need a description' }); return; }
+    if (lines.some(l => !l.description.trim())) { toast({ type: 'error', title: 'Missing field', message: 'All items need a description' }); return; }
+    if (lines.some(l => Number(l.quantity) <= 0 || Number(l.estimatedUnitCost) < 0)) {
+      toast({ type: 'error', title: 'Invalid item', message: 'Quantity must be positive and unit cost cannot be negative' }); return;
+    }
     try {
       const res = await createRequest({
         variables: {
           justification, urgency, requiredBy,
-          items: lines.map(l => ({ ...l, estimatedUnitCost: Number(l.estimatedUnitCost), quantity: Number(l.quantity) })),
+          items: lines.map(l => ({ ...l, description: l.description.trim(), estimatedUnitCost: Number(l.estimatedUnitCost), quantity: Number(l.quantity) })),
         },
       });
       toast({ type: 'success', title: 'Request created', message: res.data.createProcurementRequest.requestNumber });
@@ -304,13 +307,15 @@ function NewTenderModal({ open, onClose, refetch }: any) {
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSubmit = async () => {
-    if (!form.projectName || !form.submissionDeadline) {
-      toast({ type: 'error', title: 'Missing fields', message: 'Project name and deadline are required' }); return;
+    if (!form.projectName.trim() || !form.procurementCategory.trim() || !form.submissionDeadline) {
+      toast({ type: 'error', title: 'Missing fields', message: 'Project name, category, and deadline are required' }); return;
     }
     try {
       const res = await createTender({
         variables: {
           ...form,
+          projectName: form.projectName.trim(),
+          procurementCategory: form.procurementCategory.trim(),
           bidValidityPeriod: Number(form.bidValidityPeriod),
           bidSecurity: form.bidSecurity ? Number(form.bidSecurity) : null,
         },
@@ -397,7 +402,7 @@ function NewContractModal({ open, onClose, refetch, suppliers }: any) {
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSubmit = async () => {
-    if (!form.supplierId || !form.startDate || !form.endDate || !form.contractValue) {
+    if (!form.supplierId || !form.startDate || !form.endDate || Number(form.contractValue) <= 0) {
       toast({ type: 'error', title: 'Missing fields', message: 'Supplier, dates and value are required' }); return;
     }
     
