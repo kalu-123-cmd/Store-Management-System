@@ -212,6 +212,8 @@ model Sale {
   @@index([paymentMethod])
   @@index([paymentStatus])
   @@index([createdAt])
+  @@index([branchId])
+  @@index([userId])
 }
 
 model SaleItem {
@@ -1279,6 +1281,7 @@ model InventoryMovement {
   @@index([referenceType, referenceId])
   @@index([userId])
   @@index([createdAt])
+  @@index([batchId])
 }
 
 // ============================================
@@ -1303,6 +1306,7 @@ model CreditLedgerEntry {
   @@index([customerId, createdAt])
   @@index([entryType, createdAt])
   @@index([referenceType, referenceId])
+  @@index([userId])
 }
 
 model CreditAccount {

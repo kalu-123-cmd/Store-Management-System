@@ -224,7 +224,7 @@ export const resolvers = {
     },
 
     sale: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.SALE_VIEW);
       const s = await prisma.sale.findUnique({
         where: { id },
         include: { items: { include: { product: true } }, customer: true, user: true },
@@ -234,7 +234,7 @@ export const resolvers = {
     },
 
     transactions: async (_: any, { productId }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.INVENTORY_VIEW);
       const where: any = {};
       if (productId) where.productId = productId;
       const txns = await prisma.transaction.findMany({ where, orderBy: { createdAt: 'desc' }, include: { product: true } });
@@ -848,14 +848,14 @@ export const resolvers = {
       });
     },
     tender: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.tender.findUnique({
         where: { id },
         include: { procurementRef: true, items: { include: { technicalRequirements: true } }, bids: { include: { supplier: true } }, contracts: true, technicalRequirements: true },
       });
     },
     openTenders: async (_: any, __: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.tender.findMany({
         where: { status: 'OPEN', submissionDeadline: { gte: new Date() } },
         include: { procurementRef: true, items: true },
@@ -876,14 +876,14 @@ export const resolvers = {
       });
     },
     bid: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.bid.findUnique({
         where: { id },
         include: { tender: true, supplier: true, items: true, technicalEvaluations: { include: { technicalRequirement: true, evaluator: true } }, financialEvaluation: true },
       });
     },
     myBids: async (_: any, __: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.bid.findMany({
         where: { supplier: { name: { contains: (user as any).name ?? '' } } },
         include: { tender: true, supplier: true },
@@ -903,14 +903,14 @@ export const resolvers = {
       });
     },
     contract: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.contract.findUnique({
         where: { id },
         include: { tender: true, bid: true, supplier: true, items: true, purchaseOrders: true, goodsReceipts: true },
       });
     },
     activeContracts: async (_: any, __: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.contract.findMany({
         where: { status: 'ACTIVE', endDate: { gte: new Date() } },
         include: { supplier: true, items: true },
@@ -931,7 +931,7 @@ export const resolvers = {
       });
     },
     goodsReceipt: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.goodsReceipt.findUnique({
         where: { id },
         include: { purchaseOrder: true, contract: true, supplier: true, warehouse: true, items: { include: { product: true } } },
@@ -954,14 +954,14 @@ export const resolvers = {
       });
     },
     asset: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_VIEW);
       return prisma.asset.findUnique({
         where: { id },
         include: { department: true, warehouse: true, assignments: true, maintenance: true, disposals: true },
       });
     },
     myAssets: async (_: any, __: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_VIEW);
       return prisma.asset.findMany({
         where: { assignedTo: user.id },
         include: { department: true, warehouse: true },
@@ -981,7 +981,7 @@ export const resolvers = {
       });
     },
     assetAssignment: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_VIEW);
       return prisma.assetAssignment.findUnique({
         where: { id },
         include: { asset: true, department: true },
@@ -999,7 +999,7 @@ export const resolvers = {
       });
     },
     assetMaintenanceRecord: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_VIEW);
       return prisma.assetMaintenance.findUnique({
         where: { id },
         include: { asset: true },
@@ -1016,7 +1016,7 @@ export const resolvers = {
       });
     },
     assetDisposal: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_VIEW);
       return prisma.assetDisposal.findUnique({
         where: { id },
         include: { asset: true },
@@ -1036,7 +1036,7 @@ export const resolvers = {
       });
     },
     assetsDueForMaintenance: async (_: any, __: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.WAREHOUSE_VIEW);
       return prisma.assetMaintenance.findMany({
         where: {
           status: 'SCHEDULED',
@@ -1060,14 +1060,14 @@ export const resolvers = {
       });
     },
     workflow: async (_: any, { id }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.workflow.findUnique({
         where: { id },
         include: { steps: { orderBy: { stepNumber: 'asc' } } },
       });
     },
     workflowSteps: async (_: any, { workflowId }: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.workflowStep.findMany({
         where: { workflowId },
         include: { workflow: true, approvals: true },
@@ -1087,7 +1087,7 @@ export const resolvers = {
       });
     },
     myApprovals: async (_: any, __: any, { prisma, user }: any) => {
-      requireAuth(user);
+      requirePermission(user, PERMISSIONS.PURCHASE_VIEW);
       return prisma.approval.findMany({
         where: { approverId: user.id, status: 'PENDING' },
         include: { workflowStep: true },
@@ -1789,30 +1789,84 @@ export const resolvers = {
     recordCreditPayment: async (_: any, args: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.CREDIT_MANAGE);
       const input = validate(RecordCreditPaymentSchema, args);
-      const account = await prisma.creditAccount.findUnique({ where: { customerId: input.customerId } });
-      if (!account) throw new Error('Customer has no credit account. Set a credit limit first.');
-      const svc = new CreditLedgerService(prisma);
-      const result = await svc.processCreditPayment(
-        account.id,
-        input.amount,
-        input.paymentMethod || 'CASH',
-        undefined,
-        input.notes,
-      );
-      if (!result.success) throw new Error(result.error || 'Payment failed');
-      const updated = await prisma.creditAccount.findUnique({ where: { id: account.id } });
-      await prisma.creditLedgerEntry.create({
-        data: {
-          customerId: input.customerId,
-          entryType: 'CREDIT_PAYMENT',
-          amount: -input.amount,
-          runningBalance: updated?.currentBalance ?? 0,
-          referenceType: 'PAYMENT',
-          referenceId: account.id,
-          userId: user.id,
-          notes: input.notes,
-        },
+
+      // Single atomic transaction: update CreditAccount balance + write CreditLedgerEntry
+      const updated = await prisma.$transaction(async (tx) => {
+        const account = await (tx as any).creditAccount.findUnique({
+          where: { customerId: input.customerId },
+        });
+        if (!account) throw new Error('Customer has no credit account. Set a credit limit first.');
+        if (account.status !== 'ACTIVE') throw new Error(`Credit account is ${account.status}`);
+
+        const payAmount = input.amount;
+        if (payAmount <= 0) throw new Error('Payment amount must be positive');
+        if (payAmount > account.currentBalance) {
+          throw new Error(
+            `Payment (${payAmount}) exceeds outstanding balance (${account.currentBalance})`
+          );
+        }
+
+        const newBalance     = account.currentBalance - payAmount;
+        const newAvailable   = account.creditLimit - newBalance;
+
+        // Update credit account
+        const updatedAccount = await (tx as any).creditAccount.update({
+          where: { id: account.id },
+          data: {
+            currentBalance:  newBalance,
+            availableCredit: newAvailable,
+            lastPaymentDate: new Date(),
+            updatedAt:       new Date(),
+          },
+        });
+
+        // Update customer.currentDebt in sync
+        await (tx as any).customer.update({
+          where: { id: input.customerId },
+          data:  { currentDebt: newBalance },
+        });
+
+        // Create CreditPayment record
+        await (tx as any).creditPayment.create({
+          data: {
+            creditAccountId: account.id,
+            amount:          payAmount,
+            paymentMethod:   input.paymentMethod || 'CASH',
+            paymentDate:     new Date(),
+            notes:           input.notes || null,
+          },
+        });
+
+        // Write immutable ledger entry (same transaction — atomic)
+        await (tx as any).creditLedgerEntry.create({
+          data: {
+            customerId:     input.customerId,
+            entryType:      'CREDIT_PAYMENT',
+            amount:         -payAmount,          // negative = debt reduced
+            runningBalance: newBalance,
+            referenceType:  'PAYMENT',
+            referenceId:    account.id,
+            userId:         user.id,
+            notes:          input.notes || null,
+          },
+        });
+
+        // Audit log
+        await (tx as any).auditLog.create({
+          data: {
+            entityType:    'CREDIT_ACCOUNT',
+            entityId:      account.id,
+            action:        'CREDIT_PAYMENT',
+            userId:        user.id,
+            previousValue: JSON.stringify({ balance: account.currentBalance }),
+            newValue:      JSON.stringify({ balance: newBalance }),
+            metadata:      JSON.stringify({ amount: payAmount, paymentMethod: input.paymentMethod }),
+          },
+        });
+
+        return updatedAccount;
       });
+
       return mapCreditAccount(updated);
     },
 
@@ -2515,30 +2569,77 @@ export const resolvers = {
 
     assignPermissionToRole: async (_: any, { roleId, permissionId }: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.ROLE_MANAGE);
-      return prisma.rolePermission.create({
-        data: { roleId, permissionId },
+      const result = await prisma.rolePermission.create({
+        data:    { roleId, permissionId },
         include: { role: true, permission: true },
       });
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'CHANGE_PERMISSION',
+          entityType: 'ROLE',
+          entityId:   roleId,
+          details:    `Assigned permission '${result.permission.name}' to role '${result.role.name}'`,
+          newValue:   JSON.stringify({ roleId, permissionId }),
+        },
+      });
+      return result;
     },
     removePermissionFromRole: async (_: any, { roleId, permissionId }: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.ROLE_MANAGE);
-      await prisma.rolePermission.deleteMany({
-        where: { roleId, permissionId },
+      // Fetch names before deletion for the audit log
+      const rp = await prisma.rolePermission.findFirst({
+        where:   { roleId, permissionId },
+        include: { role: true, permission: true },
+      });
+      await prisma.rolePermission.deleteMany({ where: { roleId, permissionId } });
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'CHANGE_PERMISSION',
+          entityType: 'ROLE',
+          entityId:   roleId,
+          details:    `Removed permission '${rp?.permission.name ?? permissionId}' from role '${rp?.role.name ?? roleId}'`,
+          oldValue:   JSON.stringify({ roleId, permissionId }),
+        },
       });
       return true;
     },
 
     assignRoleToUser: async (_: any, { userId, roleId }: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.USER_UPDATE);
-      return prisma.userRole.create({
-        data: { userId, roleId, assignedBy: user.id },
+      const result = await prisma.userRole.create({
+        data:    { userId, roleId, assignedBy: user.id },
         include: { user: true, role: true },
       });
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'CHANGE_ROLE',
+          entityType: 'USER',
+          entityId:   userId,
+          details:    `Assigned role '${result.role.name}' to user '${result.user.name}'`,
+          newValue:   JSON.stringify({ userId, roleId }),
+        },
+      });
+      return result;
     },
     removeRoleFromUser: async (_: any, { userId, roleId }: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.USER_UPDATE);
-      await prisma.userRole.deleteMany({
-        where: { userId, roleId },
+      const ur = await prisma.userRole.findFirst({
+        where:   { userId, roleId },
+        include: { user: true, role: true },
+      });
+      await prisma.userRole.deleteMany({ where: { userId, roleId } });
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'CHANGE_ROLE',
+          entityType: 'USER',
+          entityId:   userId,
+          details:    `Removed role '${ur?.role.name ?? roleId}' from user '${ur?.user.name ?? userId}'`,
+          oldValue:   JSON.stringify({ userId, roleId }),
+        },
       });
       return true;
     },
@@ -2677,15 +2778,25 @@ export const resolvers = {
     },
     approveStockTransfer: async (_: any, { id }: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.INVENTORY_AUDIT);
-      return prisma.stockTransfer.update({
+      const approved = await prisma.stockTransfer.update({
         where: { id },
         data: {
-          status: 'APPROVED',
+          status:     'APPROVED',
           approvedBy: user.id,
           approvedAt: new Date(),
         },
         include: { fromWarehouse: true, toWarehouse: true, items: true },
       });
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'STOCK_TRANSFER_APPROVED',
+          entityType: 'STOCK_TRANSFER',
+          entityId:   id,
+          details:    `Stock transfer ${approved.transferNumber} approved`,
+        },
+      });
+      return approved;
     },
     dispatchStockTransfer: async (_: any, { id }: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
@@ -2694,20 +2805,29 @@ export const resolvers = {
         include: { items: true },
       });
       if (transfer?.status !== 'APPROVED') throw new Error('Transfer must be approved before dispatching');
-      
-      // Update item statuses and deduct from source warehouse
+
       for (const item of transfer.items) {
         await prisma.stockTransferItem.update({
           where: { id: item.id },
           data: { dispatchedQuantity: item.approvedQuantity || item.requestedQuantity },
         });
       }
-      
-      return prisma.stockTransfer.update({
+
+      const dispatched = await prisma.stockTransfer.update({
         where: { id },
         data: { status: 'DISPATCHED' },
         include: { fromWarehouse: true, toWarehouse: true, items: true },
       });
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'STOCK_TRANSFER_DISPATCHED',
+          entityType: 'STOCK_TRANSFER',
+          entityId:   id,
+          details:    `Stock transfer ${dispatched.transferNumber} dispatched`,
+        },
+      });
+      return dispatched;
     },
     receiveStockTransfer: async (_: any, { id }: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
@@ -2716,35 +2836,52 @@ export const resolvers = {
         include: { items: true },
       });
       if (transfer?.status !== 'DISPATCHED') throw new Error('Transfer must be dispatched before receiving');
-      
-      // Update item statuses and add to destination warehouse
+
       for (const item of transfer.items) {
         const quantity = item.approvedQuantity || item.requestedQuantity;
         await prisma.stockTransferItem.update({
           where: { id: item.id },
-          data: { receivedQuantity: quantity },
+          data:  { receivedQuantity: quantity },
         });
-        
-        // Update batch quantities
         if (item.batchId) {
           await prisma.itemBatch.update({
             where: { id: item.batchId },
-            data: { currentQuantity: { decrement: quantity } },
+            data:  { currentQuantity: { decrement: quantity } },
           });
         }
       }
-      
-      return prisma.stockTransfer.update({
+
+      const received = await prisma.stockTransfer.update({
         where: { id },
-        data: { status: 'RECEIVED' },
+        data:  { status: 'RECEIVED' },
         include: { fromWarehouse: true, toWarehouse: true, items: true },
       });
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'STOCK_TRANSFER_RECEIVED',
+          entityType: 'STOCK_TRANSFER',
+          entityId:   id,
+          details:    `Stock transfer ${received.transferNumber} received`,
+        },
+      });
+      return received;
     },
     cancelStockTransfer: async (_: any, { id }: any, { prisma, user }: any) => {
       requirePermission(user, PERMISSIONS.INVENTORY_TRANSFER);
+      const transfer = await prisma.stockTransfer.findUnique({ where: { id }, select: { transferNumber: true } });
       await prisma.stockTransfer.update({
         where: { id },
-        data: { status: 'CANCELLED' },
+        data:  { status: 'CANCELLED' },
+      });
+      await prisma.activityLog.create({
+        data: {
+          userId:     user.id,
+          action:     'STOCK_TRANSFER_CANCELLED',
+          entityType: 'STOCK_TRANSFER',
+          entityId:   id,
+          details:    `Stock transfer ${transfer?.transferNumber ?? id} cancelled`,
+        },
       });
       return true;
     },
@@ -4111,6 +4248,92 @@ export const resolvers = {
         },
         include: { user: true },
       });
+    },
+  },
+
+  // ── Field-level resolvers (DataLoader-powered, eliminates N+1) ────────────
+
+  // Sale.user + Sale.customer — batch-load to avoid 1 query per sale
+  Sale: {
+    user: (parent: any, _: any, { loaders }: any) => {
+      if (parent.user) return parent.user;
+      if (!parent.userId) return null;
+      return loaders.userLoader.load(parent.userId);
+    },
+    customer: (parent: any, _: any, { loaders }: any) => {
+      if (parent.customer) return parent.customer;
+      if (!parent.customerId) return null;
+      return loaders.customerLoader.load(parent.customerId);
+    },
+  },
+
+  // SaleItem.product — batch-load product per sale item
+  SaleItem: {
+    product: (parent: any, _: any, { prisma }: any) => {
+      if (parent.product) return parent.product;
+      if (!parent.productId) return null;
+      return prisma.product.findUnique({
+        where: { id: parent.productId },
+        include: { category: true, supplier: true },
+      }).then((p: any) => p ? {
+        ...p,
+        profitMargin: p.sellingPrice > 0
+          ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100
+          : 0,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString(),
+      } : null);
+    },
+  },
+
+  // ActivityLog.user — batch-load user per log entry
+  ActivityLog: {
+    user: (parent: any, _: any, { loaders }: any) => {
+      if (parent.user) return parent.user;
+      if (!parent.userId) return null;
+      return loaders.userLoader.load(parent.userId);
+    },
+  },
+
+  // Product.category + Product.supplier — batch-load via DataLoaders
+  Product: {
+    category: (parent: any, _: any, { loaders }: any) => {
+      if (parent.category) return parent.category;
+      if (!parent.categoryId) return null;
+      return loaders.categoryLoader.load(parent.categoryId);
+    },
+    supplier: (parent: any, _: any, { loaders }: any) => {
+      if (parent.supplier) return parent.supplier;
+      if (!parent.supplierId) return null;
+      return loaders.supplierLoader.load(parent.supplierId);
+    },
+  },
+
+  // InventoryMovement.product — batch-load product per movement record
+  InventoryMovement: {
+    product: (parent: any, _: any, { prisma }: any) => {
+      if (parent.product) return parent.product;
+      if (!parent.productId) return null;
+      return prisma.product.findUnique({ where: { id: parent.productId } })
+        .then((p: any) => p ? {
+          ...p,
+          createdAt: p.createdAt.toISOString(),
+          updatedAt: p.updatedAt.toISOString(),
+        } : null);
+    },
+  },
+
+  // PurchaseOrder.supplier + PurchaseOrder.user
+  PurchaseOrder: {
+    supplier: (parent: any, _: any, { loaders }: any) => {
+      if (parent.supplier) return parent.supplier;
+      if (!parent.supplierId) return null;
+      return loaders.supplierLoader.load(parent.supplierId);
+    },
+    user: (parent: any, _: any, { loaders }: any) => {
+      if (parent.user) return parent.user;
+      if (!parent.userId) return null;
+      return loaders.userLoader.load(parent.userId);
     },
   },
 };

@@ -20,6 +20,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import Decimal from 'decimal.js';
+import { recordMovement } from './inventoryLedgerService';
 
 // Configure Decimal for financial precision
 Decimal.set({
@@ -628,6 +629,7 @@ export async function receiveGoods(
         }
 
         // Update product stock
+        const previousStock = product.stock;
         await tx.product.update({
           where: { id: product.id },
           data: {
@@ -636,8 +638,24 @@ export async function receiveGoods(
             },
           },
         });
+        const newStock = previousStock + receivedItem.quantityReceived;
 
-        // Create stock transaction
+        // Record in inventory ledger (PURCHASE movement)
+        await recordMovement(tx as any, {
+          productId:     product.id,
+          movementType:  'PURCHASE',
+          quantity:      receivedItem.quantityReceived,
+          previousStock,
+          newStock,
+          referenceType: 'PURCHASE_ORDER',
+          referenceId:   input.purchaseOrderId,
+          batchId:       receivedItem.batchNumber ? undefined : undefined,
+          unitCost:      receiptItem.actualUnitCost ?? 0,
+          userId:        input.userId,
+          notes:         `Goods receipt ${receiptNumber} for PO ${purchaseOrder.poNumber}`,
+        });
+
+        // Create stock transaction (legacy table)
         await tx.transaction.create({
           data: {
             product: { connect: { id: product.id } },
@@ -645,6 +663,11 @@ export async function receiveGoods(
             type: 'IN',
             notes: `Goods receipt ${receiptNumber} for PO ${purchaseOrder.poNumber}`,
             user: { connect: { id: input.userId } },
+            unitPrice:       receiptItem.actualUnitCost ?? 0,
+            subtotal:        (receiptItem.actualUnitCost ?? 0) * receivedItem.quantityReceived,
+            vatAmount:       0,
+            totalAmount:     (receiptItem.actualUnitCost ?? 0) * receivedItem.quantityReceived,
+            clearanceStatus: 'CLEARED',
           } as any,
         });
       }

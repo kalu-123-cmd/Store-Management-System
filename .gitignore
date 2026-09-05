@@ -9,12 +9,20 @@ build/
 .next/
 out/
 
-# Environment files — never commit secrets
+# Environment files — never commit real secrets
+# Root .env files (.env.production / .env.docker) are kept as TEMPLATES only
+# — they contain only placeholder values and serve as documentation.
+# Any file named exactly .env (in any directory) is always ignored.
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+# Explicit coverage for all sub-directories
+server/.env
+server/.env.local
+client/.env
+client/.env.local
 
 # Database files
 *.db
@@ -23,6 +31,12 @@ out/
 *.sqlite3
 prisma/dev.db
 prisma/dev.db-journal
+server/prisma/dev.db
+server/prisma/dev.db-journal
+server/prisma/test.db
+server/prisma/test.db-journal
+server/prisma/concurrency-test.db
+server/prisma/concurrency-test.db-journal
 
 # Prisma generated client (regenerated on install)
 server/node_modules/.prisma/

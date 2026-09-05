@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tsx --test src/__tests__/financials.test.ts",
+    "test": "tsx --test src/__tests__/financials.test.ts src/__tests__/integration.test.ts src/__tests__/concurrency.test.ts",
+    "test:unit": "tsx --test src/__tests__/financials.test.ts",
+    "test:integration": "tsx --test src/__tests__/integration.test.ts",
+    "test:concurrency": "tsx --test src/__tests__/concurrency.test.ts",
     "start": "node scripts/startProduction.cjs",
     "start:dev-prod": "npx prisma db push && node dist/index.js",
     "dev": "tsx watch src/index.ts",

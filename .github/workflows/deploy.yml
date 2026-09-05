@@ -75,9 +75,25 @@ jobs:
         run: npx prisma generate
         env:
           DATABASE_URL: file:./prisma/dev.db
+          DATABASE_PROVIDER: sqlite
 
       - name: Type-check (build tsconfig)
         run: npx tsc --project tsconfig.build.json --noEmit
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Integration tests
+        run: npm run test:integration
+        env:
+          DATABASE_URL: file:./prisma/test.db
+          DATABASE_PROVIDER: sqlite
+
+      - name: Concurrency tests
+        run: npm run test:concurrency
+        env:
+          DATABASE_URL: file:./prisma/concurrency-test.db
+          DATABASE_PROVIDER: sqlite
 
       - name: Build
         run: npx tsc --project tsconfig.build.json

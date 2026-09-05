@@ -19,6 +19,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import Decimal from 'decimal.js';
+import { recordMovement } from './inventoryLedgerService';
 
 // Configure Decimal for financial precision
 Decimal.set({
@@ -439,7 +440,7 @@ export class CSVImportService {
               },
             });
 
-            // Create initial stock movement
+            // Create initial stock movement in legacy Transaction table
             await tx.transaction.create({
               data: {
                 productId: newProduct.id,
@@ -453,6 +454,21 @@ export class CSVImportService {
                 totalAmount: stock * (costPrice || 0) * 1.15,
               },
             });
+
+            // Record in inventory ledger
+            if (stock > 0) {
+              await recordMovement(tx as any, {
+                productId:     newProduct.id,
+                movementType:  'STOCK_IN',
+                quantity:      stock,
+                previousStock: 0,
+                newStock:      stock,
+                referenceType: 'ADJUSTMENT',
+                unitCost:      costPrice || 0,
+                userId,
+                notes:         'CSV import — initial stock',
+              });
+            }
 
             created++;
             stockChanges++;
@@ -494,6 +510,18 @@ export class CSVImportService {
                     vatAmount: stock * (costPrice || existingProduct.costPrice) * 0.15,
                     totalAmount: stock * (costPrice || existingProduct.costPrice) * 1.15,
                   },
+                });
+                // Record in inventory ledger
+                await recordMovement(tx as any, {
+                  productId:     existingProduct.id,
+                  movementType:  'ADJUSTMENT',
+                  quantity:      stockDifference,
+                  previousStock,
+                  newStock:      stock,
+                  referenceType: 'ADJUSTMENT',
+                  unitCost:      costPrice || existingProduct.costPrice,
+                  userId,
+                  notes:         `CSV import — stock adjusted ${stockDifference > 0 ? '+' : ''}${stockDifference}`,
                 });
                 stockChanges++;
               }

@@ -166,6 +166,8 @@ export async function createAtomicSale(
       const enrichedItems = request.items.map(item => {
         const product    = productMap.get(item.productId)!;
         const lineSubtotal = new Decimal(item.price).mul(item.quantity);
+        // COGS uses product costPrice here as an estimate; it will be refined per
+        // batch inside the stock deduction loop below (effectiveCostPrice).
         const lineCogs     = new Decimal(product.costPrice).mul(item.quantity);
         subtotal  = subtotal.add(lineSubtotal);
         cogsTotal = cogsTotal.add(lineCogs);
@@ -209,26 +211,74 @@ export async function createAtomicSale(
       });
 
       // ── STEP 6: Deduct stock + create sale items + ledger entries ─────────
-      // This is the critical section. Each product.update uses a conditional
-      // decrement — if stock is already 0 the update will fail gracefully.
+      // FEFO batch deduction: if a product has active ProductBatch records,
+      // deduct from batches in earliest-expiry-first order (FEFO).
+      // Non-batch products follow the direct product.stock decrement path.
       const saleItemResults = [];
 
       for (const { item, product, lineSubtotal } of enrichedItems) {
         const previousStock = product.stock;
 
-        // Atomic decrement with guard — UPDATE ... WHERE stock >= qty
-        // If stock was changed by a concurrent transaction, this will produce
-        // a different result and we catch it with the post-update check.
+        // Check for active batches (FEFO path)
+        const activeBatches = await (tx as any).productBatch.findMany({
+          where: {
+            productId: item.productId,
+            status:    'ACTIVE',
+            quantity:  { gt: 0 },
+            // Exclude expired batches — must not be sold
+            expiryDate: { gt: new Date() },
+          },
+          orderBy: { expiryDate: 'asc' }, // FEFO — earliest expiry first
+        });
+
+        let primaryBatchId: string | undefined;
+        let effectiveCostPrice = product.costPrice;
+
+        if (activeBatches.length > 0) {
+          // ── FEFO deduction path ──────────────────────────────────────────
+          // Deduct from batches in FEFO order across multiple batches if needed
+          let remaining = item.quantity;
+          for (const batch of activeBatches) {
+            if (remaining <= 0) break;
+            const take = Math.min(remaining, batch.quantity as number);
+            const updatedBatch = await (tx as any).productBatch.update({
+              where: { id: batch.id },
+              data:  {
+                quantity:  { decrement: take },
+                updatedAt: new Date(),
+              },
+              select: { quantity: true },
+            });
+            // Mark batch as CONSUMED when emptied
+            if ((updatedBatch as any).quantity === 0) {
+              await (tx as any).productBatch.update({
+                where: { id: batch.id },
+                data:  { status: 'CONSUMED' },
+              });
+            }
+            remaining -= take;
+            if (!primaryBatchId) {
+              primaryBatchId = batch.id;
+              effectiveCostPrice = (batch.landedCost as number) || product.costPrice;
+            }
+          }
+          if (remaining > 0) {
+            throw new Error(
+              `Insufficient batch stock for "${product.name}". ` +
+              `Batch total is ${item.quantity - remaining} but ${item.quantity} requested.`
+            );
+          }
+        }
+
+        // Atomic decrement on Product.stock (always, batch or not)
         const updatedProduct = await (tx as any).product.update({
           where: { id: item.productId },
           data:  { stock: { decrement: item.quantity }, updatedAt: new Date() },
           select: { stock: true },
         });
 
-        // Double-check: if resulting stock is negative, someone else grabbed it
+        // Race condition guard — stock must not go negative
         if (updatedProduct.stock < 0) {
-          // Undo this decrement — can't use rollback directly but throwing
-          // will cause the $transaction to roll back everything automatically
           throw new Error(
             `Race condition detected for "${product.name}". ` +
             `Concurrent sale depleted stock. Please retry.`
@@ -238,17 +288,19 @@ export async function createAtomicSale(
         const newStock = updatedProduct.stock;
 
         // Create sale item with cost price snapshot
+        // Use batch landed cost when available (more accurate COGS)
         const saleItem = await (tx as any).saleItem.create({
           data: {
             saleId:    sale.id,
             productId: item.productId,
             quantity:  item.quantity,
             price:     item.price,
-            costPrice: product.costPrice,  // historical snapshot
+            costPrice: effectiveCostPrice,  // historical snapshot (batch cost if FEFO)
           },
         });
+        void saleItem;
 
-        // Record in inventory ledger
+        // Record in inventory ledger (with batchId if FEFO path was used)
         await recordMovement(tx as any, {
           productId:     item.productId,
           movementType:  'SALE',
@@ -257,7 +309,8 @@ export async function createAtomicSale(
           newStock,
           referenceType: 'SALE',
           referenceId:   sale.id,
-          unitCost:      product.costPrice,
+          batchId:       primaryBatchId,
+          unitCost:      effectiveCostPrice,
           userId:        request.cashierId,
           notes:         `Invoice ${invoiceNo}`,
         });
@@ -283,7 +336,7 @@ export async function createAtomicSale(
           productName: product.name,
           quantity:    item.quantity,
           price:       item.price,
-          costPrice:   product.costPrice,
+          costPrice:   effectiveCostPrice,  // batch cost if FEFO, else product cost
           subtotal:    lineSubtotal.toNumber(),
         });
 

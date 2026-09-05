@@ -14,6 +14,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { createDataLoaders } from './dataloaders';
 import { depthLimit } from './graphql/depthLimit';
+import { complexityLimit } from './graphql/complexityLimit';
 import { specifiedRules } from 'graphql';
 
 dotenv.config();
@@ -31,17 +32,40 @@ if (!JWT_SECRET) {
 // Safe to cast — we've either exited or warned. Use a non-empty fallback for dev only.
 const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev_only_insecure_secret_do_not_use_in_production';
 
-// ── Database path resolution ──────────────────────────────────────────────────
-// Always prefer SQLite for this app. Ignores expired/unreachable Render Postgres URLs.
-const postgresUrl = process.env.DATABASE_URL && /postgres|dpg-/i.test(process.env.DATABASE_URL);
+// ── Database configuration ────────────────────────────────────────────────────
+// By default the app uses SQLite (dev + Render free tier).
+// To use PostgreSQL, set DATABASE_PROVIDER=postgresql and provide a full
+// DATABASE_URL=postgresql://... in your environment.
+//
+// On Render with a persistent disk (/data), SQLite is used automatically
+// unless DATABASE_PROVIDER=postgresql overrides it.
+const databaseProvider = (process.env.DATABASE_PROVIDER || 'sqlite').toLowerCase();
 const onRender = process.env.RENDER === 'true' || fs.existsSync('/data');
-if (onRender || postgresUrl) {
-  const diskDir = onRender ? '/data' : path.join(__dirname, '../prisma/data');
-  try { fs.mkdirSync(diskDir, { recursive: true }); } catch { /* ignore */ }
-  process.env.DATABASE_URL = onRender
-    ? 'file:/data/prod.db'
-    : `file:${path.join(diskDir, 'prod.db').replace(/\\/g, '/')}`;
-  console.log('[db] Using SQLite at', process.env.DATABASE_URL);
+
+if (databaseProvider === 'sqlite' || (!process.env.DATABASE_PROVIDER && databaseProvider !== 'postgresql')) {
+  // SQLite path: set the file URL if not already pointing at a file
+  const currentUrl = process.env.DATABASE_URL || '';
+  const isPostgresUrl = /postgres|dpg-/i.test(currentUrl);
+
+  if (isPostgresUrl || !currentUrl) {
+    // Override to SQLite — either no URL set, or a stale/unreachable Postgres URL
+    const diskDir = onRender ? '/data' : path.join(__dirname, '../prisma');
+    try { fs.mkdirSync(diskDir, { recursive: true }); } catch { /* ignore */ }
+    process.env.DATABASE_URL = onRender
+      ? 'file:/data/prod.db'
+      : `file:${path.join(diskDir, 'dev.db').replace(/\\/g, '/')}`;
+    console.log('[db] Using SQLite at', process.env.DATABASE_URL);
+  } else {
+    console.log('[db] Using SQLite at', process.env.DATABASE_URL);
+  }
+} else {
+  // PostgreSQL path — use DATABASE_URL as-is
+  if (!process.env.DATABASE_URL || !/postgres/i.test(process.env.DATABASE_URL)) {
+    console.error('[FATAL] DATABASE_PROVIDER=postgresql but DATABASE_URL is missing or not a PostgreSQL URL.');
+    if (process.env.NODE_ENV === 'production') process.exit(1);
+  } else {
+    console.log('[db] Using PostgreSQL at', process.env.DATABASE_URL.replace(/:\/\/.*@/, '://***@'));
+  }
 }
 
 const prisma = new PrismaClient();
@@ -479,7 +503,11 @@ async function startServer() {
     typeDefs,
     resolvers,
     csrfPrevention: false,
-    validationRules: [...specifiedRules, depthLimit(12)],
+    validationRules: [
+      ...specifiedRules,
+      depthLimit(12),           // reject queries nested more than 12 levels deep
+      complexityLimit(800, 8),  // reject queries with score > 800 (list fields cost 8x)
+    ],
   });
 
   await server.start();
