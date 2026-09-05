@@ -75,7 +75,7 @@ const GET_IMPORT_HISTORY = gql`
 `;
 
 // Queries to invalidate after a successful import so the dashboard refreshes
-const DASHBOARD_QUERIES = ['GetDashboardMain', 'GetActivity'];
+const _DASHBOARD_QUERIES = ['GetDashboardMain', 'GetActivity']; // kept for reference
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -254,9 +254,9 @@ export function CSVImportPage() {
         });
       }
 
-      // Invalidate Apollo cache for dashboard queries so the next visit
-      // fetches fresh data, then navigate using React Router (no full reload).
-      await apolloClient.refetchQueries({ include: DASHBOARD_QUERIES });
+      // Evict all Apollo cache so dashboard, products, and inventory all
+      // fetch fresh data immediately after the import completes.
+      await apolloClient.refetchQueries({ include: 'active' });
       refetchHistory();
     } catch (err: any) {
       toast({
@@ -374,19 +374,42 @@ export function CSVImportPage() {
 
         {/* Template download hint */}
         <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
-          <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Required columns</h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-            Your file must include these column headers (exact names or common aliases are accepted):
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {['name', 'sku', 'category', 'stock', 'costPrice', 'sellingPrice'].map((col) => (
-              <span key={col} className="px-2 py-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono text-slate-700 dark:text-slate-300">
-                {col}
-              </span>
-            ))}
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-slate-900 dark:text-white">Accepted column names</h3>
+            <a
+              href="/sample-products.csv"
+              download="sample-products.csv"
+              className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-300 rounded-lg px-3 py-1.5 hover:bg-blue-50 transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" /> Download sample CSV
+            </a>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-3">
-            Optional: <span className="font-mono">barcode</span> · <span className="font-mono">margin</span> · <span className="font-mono">brand</span>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            Your file must contain a <strong>Product Name</strong> and a <strong>Product Code / SKU</strong>. All other columns are optional.
+          </p>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <p className="font-medium text-slate-700 dark:text-slate-300 mb-1">Required</p>
+              <div className="space-y-1">
+                {[['Product Name / name', 'Product name'], ['Product Code / sku / code', 'Unique identifier']].map(([col, desc]) => (
+                  <div key={col} className="flex items-center gap-2">
+                    <span className="px-1.5 py-0.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded font-mono text-slate-700 dark:text-slate-300">{col}</span>
+                    <span className="text-slate-500">{desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="font-medium text-slate-700 dark:text-slate-300 mb-1">Optional (auto-detected)</p>
+              <div className="flex flex-wrap gap-1">
+                {['Category', 'Quantity / stock', 'Minimum Stock', 'Unit Cost (ETB)', 'Selling Price', 'Supplier', 'Barcode', 'Expiry Date'].map((col) => (
+                  <span key={col} className="px-1.5 py-0.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded font-mono text-slate-700 dark:text-slate-300">{col}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 border-t border-slate-200 dark:border-slate-700 pt-3">
+            ✅ Government institution format supported — <em>Unit Cost (ETB)</em> is used as cost price. Selling price defaults to cost price if not provided.
           </p>
         </div>
 

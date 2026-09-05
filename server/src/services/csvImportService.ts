@@ -42,6 +42,10 @@ export interface ProductCSVRow {
   sellingPrice: string;
   margin?: string;
   barcode?: string;
+  minStockLevel?: string;
+  supplier?: string;
+  unit?: string;
+  expiryDate?: string;
 }
 
 export interface InventoryCSVRow {
@@ -108,7 +112,10 @@ export interface ImportHistory {
 // ── CSV Parser with Column Normalization ─────────────────────────────────────────
 
 export function parseCSV(content: string): CSVRow[] {
-  const lines = content.split('\n').filter(line => line.trim());
+  // Strip BOM (Excel UTF-8 CSVs often start with \uFEFF)
+  const cleaned = content.replace(/^\uFEFF/, '');
+  // Normalize CRLF → LF, then split
+  const lines = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(line => line.trim());
   if (lines.length === 0) return [];
 
   const headers = normalizeHeaders(parseCSVLine(lines[0]));
@@ -117,12 +124,14 @@ export function parseCSV(content: string): CSVRow[] {
   for (let i = 1; i < lines.length; i++) {
     const values = parseCSVLine(lines[i]);
     const row: CSVRow = {};
-    
+
     headers.forEach((header, index) => {
-      row[header] = values[index] || '';
+      row[header] = (values[index] ?? '').trim();
     });
-    
-    rows.push(row);
+
+    // Skip completely empty rows
+    const hasContent = Object.values(row).some(v => v.length > 0);
+    if (hasContent) rows.push(row);
   }
 
   return rows;
@@ -131,32 +140,110 @@ export function parseCSV(content: string): CSVRow[] {
 // Normalize column headers to standard names
 function normalizeHeaders(headers: string[]): string[] {
   const headerMap: Record<string, string> = {
+    // Name variants
+    'name': 'name',
     'product name': 'name',
     'product_name': 'name',
     'productname': 'name',
+    'item name': 'name',
+    'item_name': 'name',
+    'description': 'name',
+    'product description': 'name',
+
+    // SKU / Code variants
     'sku': 'sku',
-    'Sku': 'sku',
-    'SKU': 'sku',
+    'code': 'sku',
+    'product code': 'sku',
+    'product_code': 'sku',
+    'item code': 'sku',
+    'item_code': 'sku',
+    'part number': 'sku',
+    'part_number': 'sku',
+    'barcode': 'barcode',
+    'ean': 'barcode',
+    'upc': 'barcode',
+
+    // Category variants
+    'category': 'category',
+    'type': 'category',
+    'product type': 'category',
+    'group': 'category',
+
+    // Stock / Quantity variants
     'stock': 'stock',
     'quantity': 'stock',
+    'qty': 'stock',
     'currentstock': 'stock',
     'current_stock': 'stock',
-    'cost price': 'costPrice',
-    'cost_price': 'costPrice',
+    'current stock': 'stock',
+    'on hand': 'stock',
+    'on_hand': 'stock',
+
+    // Min stock variants
+    'minstocklevel': 'minStockLevel',
+    'min_stock_level': 'minStockLevel',
+    'min stock level': 'minStockLevel',
+    'minimum stock': 'minStockLevel',
+    'minimum_stock': 'minStockLevel',
+    'reorder level': 'minStockLevel',
+    'reorder_level': 'minStockLevel',
+    'reorder point': 'minStockLevel',
+
+    // Cost price variants
     'costprice': 'costPrice',
-    'selling price': 'sellingPrice',
-    'selling_price': 'sellingPrice',
+    'cost_price': 'costPrice',
+    'cost price': 'costPrice',
+    'unit cost': 'costPrice',
+    'unit_cost': 'costPrice',
+    'unit cost (etb)': 'costPrice',
+    'purchase price': 'costPrice',
+    'purchase_price': 'costPrice',
+    'buy price': 'costPrice',
+
+    // Selling price variants
     'sellingprice': 'sellingPrice',
+    'selling_price': 'sellingPrice',
+    'selling price': 'sellingPrice',
+    'sale price': 'sellingPrice',
+    'sale_price': 'sellingPrice',
     'price': 'sellingPrice',
-    'category': 'category',
-    'brand': 'brand',
-    'barcode': 'barcode',
-    'margin': 'margin',
+    'retail price': 'sellingPrice',
+    'retail_price': 'sellingPrice',
+
+    // Supplier variants
+    'supplier': 'supplier',
+    'vendor': 'supplier',
+    'supplier name': 'supplier',
+    'vendor name': 'supplier',
+
+    // Unit of measure
+    'unit': 'unit',
+    'uom': 'unit',
+    'unit of measure': 'unit',
+
+    // Expiry date
+    'expiry date': 'expiryDate',
+    'expiry_date': 'expiryDate',
+    'expiration date': 'expiryDate',
+    'expiration_date': 'expiryDate',
+    'best before': 'expiryDate',
+    'use by': 'expiryDate',
+
+    // Status
     'status': 'status',
+
+    // Margin (calculated, optional)
+    'margin': 'margin',
+
+    // Department (ignored, informational only)
+    'department / user': '_ignore',
+    'department/user': '_ignore',
+    'department': '_ignore',
+    'user': '_ignore',
   };
 
   return headers.map(header => {
-    const normalized = header.toLowerCase().trim();
+    const normalized = header.toLowerCase().trim().replace(/\s+/g, ' ');
     return headerMap[normalized] || normalized;
   });
 }
@@ -193,82 +280,97 @@ function parseCSVLine(line: string): string[] {
 export function validateProductRow(row: CSVRow, rowNumber: number, existingSKUs: Set<string>): ImportValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
-  const name = row['name']?.trim() || '';
-  const sku = row['sku']?.trim() || '';
-  const category = row['category']?.trim() || '';
-  const stock = row['stock']?.trim() || '0';
-  const costPrice = row['costPrice']?.trim() || '';
-  const sellingPrice = row['sellingPrice']?.trim() || '';
-  const margin = row['margin']?.trim();
-  const barcode = row['barcode']?.trim() || '';
+
+  const name        = row['name']?.trim()         || '';
+  const sku         = row['sku']?.trim()           || '';
+  const category    = row['category']?.trim()      || '';
+  const stockStr    = row['stock']?.trim()         || '0';
+  const costPriceStr = row['costPrice']?.trim()    || '';
+  const sellingPriceStr = row['sellingPrice']?.trim() || '';
+  const minStockStr  = row['minStockLevel']?.trim() || '';
+  const margin      = row['margin']?.trim();
+  const barcode     = row['barcode']?.trim()       || '';
+  const supplier    = row['supplier']?.trim()      || '';
+  const unit        = row['unit']?.trim()          || '';
+  const expiryDate  = row['expiryDate']?.trim()    || '';
 
   // Required fields
   if (!name) errors.push('Product name is required');
-  if (!sku) errors.push('SKU is required');
+  if (!sku)  errors.push('Product code / SKU is required');
 
   // Check for duplicate SKU in this CSV batch
   if (sku && existingSKUs.has(sku)) {
-    errors.push(`Duplicate SKU "${sku}" in CSV file`);
+    errors.push(`Duplicate SKU "${sku}" in import file`);
   } else if (sku) {
     existingSKUs.add(sku);
   }
 
-  // Numeric validation (only if field exists)
-  if (stock) {
-    const stockNum = parseInt(stock);
-    if (isNaN(stockNum) || stockNum < 0) {
-      errors.push('Stock must be a non-negative number');
+  // Stock validation
+  const stockNum = parseInt(stockStr);
+  if (stockStr && (isNaN(stockNum) || stockNum < 0)) {
+    errors.push('Quantity must be a non-negative whole number');
+  }
+
+  // Min stock validation
+  if (minStockStr) {
+    const minStock = parseInt(minStockStr);
+    if (isNaN(minStock) || minStock < 0) {
+      errors.push('Minimum stock must be a non-negative whole number');
     }
   }
 
-  if (costPrice) {
-    const costPriceNum = parseFloat(costPrice);
-    if (isNaN(costPriceNum) || costPriceNum < 0) {
-      errors.push('Cost price must be a non-negative number');
+  // Cost price validation
+  if (costPriceStr) {
+    const cost = parseFloat(costPriceStr.replace(/,/g, ''));
+    if (isNaN(cost) || cost < 0) {
+      errors.push('Unit cost must be a non-negative number');
     }
   }
 
-  if (sellingPrice) {
-    const sellingPriceNum = parseFloat(sellingPrice);
-    if (isNaN(sellingPriceNum) || sellingPriceNum < 0) {
+  // Selling price validation (optional — defaults to costPrice if missing)
+  if (sellingPriceStr) {
+    const selling = parseFloat(sellingPriceStr.replace(/,/g, ''));
+    if (isNaN(selling) || selling < 0) {
       errors.push('Selling price must be a non-negative number');
     }
   }
 
-  // Business logic validation (only if both prices exist)
-  if (costPrice && sellingPrice) {
-    const costPriceNum = parseFloat(costPrice);
-    const sellingPriceNum = parseFloat(sellingPrice);
-    if (sellingPriceNum < costPriceNum) {
-      warnings.push('Selling price is below cost price (loss-making product)');
+  // Business logic: selling < cost warning
+  if (costPriceStr && sellingPriceStr) {
+    const cost    = parseFloat(costPriceStr.replace(/,/g, ''));
+    const selling = parseFloat(sellingPriceStr.replace(/,/g, ''));
+    if (!isNaN(cost) && !isNaN(selling) && selling < cost) {
+      warnings.push('Selling price is below cost price (loss-making)');
     }
   }
 
-  // Margin validation (only if provided)
+  // Margin validation (optional informational field)
   if (margin) {
     const marginNum = parseFloat(margin);
     if (isNaN(marginNum)) {
-      errors.push('Margin must be a valid number');
-    } else if (marginNum < 0 || marginNum > 100) {
-      errors.push('Margin must be between 0 and 100');
+      warnings.push('Margin could not be parsed (ignored)');
     }
   }
 
-  // SKU format validation
-  if (sku && !/^[A-Z0-9-_]+$/.test(sku)) {
-    warnings.push('SKU contains non-standard characters (recommended: uppercase letters, numbers, hyphens, underscores)');
-  }
-
-  // Barcode validation (if provided)
-  if (barcode && !/^[A-Z0-9-_]+$/.test(barcode)) {
-    warnings.push('Barcode contains non-standard characters');
+  // Expiry date validation (optional)
+  if (expiryDate) {
+    const d = new Date(expiryDate);
+    if (isNaN(d.getTime())) {
+      warnings.push(`Expiry date "${expiryDate}" could not be parsed (ignored)`);
+    }
   }
 
   return {
     isValid: errors.length === 0,
     rowNumber,
-    data: { name, sku, category, stock, costPrice, sellingPrice, margin, barcode },
+    data: {
+      name, sku, category,
+      stock:        stockStr,
+      costPrice:    costPriceStr,
+      sellingPrice: sellingPriceStr,
+      minStockLevel: minStockStr,
+      margin, barcode, supplier, unit, expiryDate,
+    },
     errors,
     warnings,
     action: 'ERROR', // Will be determined by SKU check
@@ -410,12 +512,16 @@ export class CSVImportService {
           }
 
           const data = validation.data as ProductCSVRow;
-          const stock = data.stock ? parseInt(data.stock) : 0;
-          const costPrice = data.costPrice ? parseFloat(data.costPrice) : null;
-          const sellingPrice = data.sellingPrice ? parseFloat(data.sellingPrice) : null;
+          const stock        = data.stock        ? parseInt(data.stock)                          : 0;
+          const costPrice    = data.costPrice     ? parseFloat((data.costPrice as string).replace(/,/g, ''))    : null;
+          // If no sellingPrice, default to costPrice (government stores track cost only)
+          const sellingPrice = data.sellingPrice  ? parseFloat((data.sellingPrice as string).replace(/,/g, '')) : costPrice;
+          const minStockLevel = (data as any).minStockLevel ? parseInt((data as any).minStockLevel) : 10;
+          const expiryDate    = (data as any).expiryDate   ? new Date((data as any).expiryDate)   : null;
+          const supplierName  = (data as any).supplier     || null;
 
           // Find or create category
-          let categoryId = categoryMap.get(data.category.toLowerCase());
+          let categoryId = categoryMap.get((data.category || '').toLowerCase());
           if (!categoryId && data.category) {
             const newCategory = await tx.category.create({
               data: { name: data.category },
@@ -424,19 +530,37 @@ export class CSVImportService {
             categoryMap.set(data.category.toLowerCase(), categoryId);
           }
 
+          // Find or create supplier (if provided)
+          let supplierId: string | null = null;
+          if (supplierName) {
+            const existingSupplier = await tx.supplier.findFirst({
+              where: { name: { equals: supplierName } },
+              select: { id: true },
+            });
+            if (existingSupplier) {
+              supplierId = existingSupplier.id;
+            } else {
+              const newSupplier = await tx.supplier.create({
+                data: { name: supplierName },
+              });
+              supplierId = newSupplier.id;
+            }
+          }
+
           if (validation.action === 'CREATE') {
             // Create new product
             const newProduct = await tx.product.create({
               data: {
-                name: data.name,
-                sku: data.sku,
-                categoryId: categoryId || null,
-                costPrice: costPrice || 0,
-                sellingPrice: sellingPrice || 0,
+                name:          data.name,
+                sku:           data.sku,
+                categoryId:    categoryId || null,
+                supplierId:    supplierId,
+                costPrice:     costPrice    ?? 0,
+                sellingPrice:  sellingPrice ?? costPrice ?? 0,
                 stock,
-                minStockLevel: 10,
-                status: 'ACTIVE',
-                barcode: data.barcode || null,
+                minStockLevel,
+                status:        'ACTIVE',
+                barcode:       data.barcode || null,
               },
             });
 
@@ -444,14 +568,15 @@ export class CSVImportService {
             await tx.transaction.create({
               data: {
                 productId: newProduct.id,
-                quantity: stock,
-                type: 'IN',
-                notes: 'CSV SYNCHRONIZATION - Initial import',
+                quantity:  stock,
+                type:      'IN',
+                notes:     'CSV Import — initial stock',
                 userId,
-                unitPrice: costPrice || 0,
-                subtotal: stock * (costPrice || 0),
-                vatAmount: stock * (costPrice || 0) * 0.15,
-                totalAmount: stock * (costPrice || 0) * 1.15,
+                unitPrice:   costPrice ?? 0,
+                subtotal:    stock * (costPrice ?? 0),
+                vatAmount:   0,
+                totalAmount: stock * (costPrice ?? 0),
+                clearanceStatus: 'CLEARED',
               },
             });
 
@@ -479,12 +604,14 @@ export class CSVImportService {
               const updateData: any = {};
               
               // Only update fields that are provided in CSV
-              if (data.name) updateData.name = data.name;
-              if (categoryId) updateData.categoryId = categoryId;
-              if (costPrice !== null) updateData.costPrice = costPrice;
-              if (sellingPrice !== null) updateData.sellingPrice = sellingPrice;
-              if (data.stock !== undefined) updateData.stock = stock;
-              if (data.barcode) updateData.barcode = data.barcode;
+              if (data.name)              updateData.name         = data.name;
+              if (categoryId)             updateData.categoryId   = categoryId;
+              if (supplierId)             updateData.supplierId   = supplierId;
+              if (costPrice    !== null)  updateData.costPrice    = costPrice;
+              if (sellingPrice !== null)  updateData.sellingPrice = sellingPrice;
+              if (data.stock   !== undefined) updateData.stock    = stock;
+              if ((data as any).minStockLevel)    updateData.minStockLevel = minStockLevel;
+              if (data.barcode)           updateData.barcode      = data.barcode;
 
               // Track stock change
               const previousStock = existingProduct.stock;
@@ -492,23 +619,25 @@ export class CSVImportService {
 
               await tx.product.update({
                 where: { id: existingProduct.id },
-                data: updateData,
+                data:  updateData,
               });
 
               // Create stock adjustment movement if stock changed
               if (stockChanged) {
+                const effectiveCost  = costPrice    ?? existingProduct.costPrice;
                 const stockDifference = stock - previousStock;
                 await tx.transaction.create({
                   data: {
                     productId: existingProduct.id,
-                    quantity: stock,
-                    type: 'ADJUSTMENT',
-                    notes: `CSV SYNCHRONIZATION - Stock adjusted from ${previousStock} to ${stock} (${stockDifference > 0 ? '+' : ''}${stockDifference})`,
+                    quantity:  stock,
+                    type:      'ADJUSTMENT',
+                    notes:     `CSV Import — stock adjusted from ${previousStock} to ${stock}`,
                     userId,
-                    unitPrice: costPrice || existingProduct.costPrice,
-                    subtotal: stock * (costPrice || existingProduct.costPrice),
-                    vatAmount: stock * (costPrice || existingProduct.costPrice) * 0.15,
-                    totalAmount: stock * (costPrice || existingProduct.costPrice) * 1.15,
+                    unitPrice:   effectiveCost,
+                    subtotal:    stock * effectiveCost,
+                    vatAmount:   0,
+                    totalAmount: stock * effectiveCost,
+                    clearanceStatus: 'CLEARED',
                   },
                 });
                 // Record in inventory ledger
@@ -519,9 +648,9 @@ export class CSVImportService {
                   previousStock,
                   newStock:      stock,
                   referenceType: 'ADJUSTMENT',
-                  unitCost:      costPrice || existingProduct.costPrice,
+                  unitCost:      effectiveCost,
                   userId,
-                  notes:         `CSV import — stock adjusted ${stockDifference > 0 ? '+' : ''}${stockDifference}`,
+                  notes:         `CSV import — stock ${stockDifference > 0 ? '+' : ''}${stockDifference}`,
                 });
                 stockChanges++;
               }
