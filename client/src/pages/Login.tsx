@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useMutation, gql } from '@apollo/client';
+import { useMutation, gql, useApolloClient } from '@apollo/client';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, Mail, ArrowRight, Sun, Moon } from 'lucide-react';
@@ -21,6 +21,7 @@ export default function Login() {
   const [login, { loading, error }] = useMutation(LOGIN_MUTATION);
   const [dark, setDark] = useDarkMode();
   const navigate = useNavigate();
+  const apolloClient = useApolloClient();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,6 +30,8 @@ export default function Login() {
       if (data.login.token) {
         localStorage.setItem('token', data.login.token);
         localStorage.setItem('user', JSON.stringify(data.login.user));
+        // Clear Apollo cache so all subsequent queries fire fresh with the new token
+        await apolloClient.clearStore();
         navigate('/dashboard');
       }
     } catch {

@@ -66,16 +66,25 @@ const authLink = setContext((_, { headers }) => {
 })
 
 // ── Error link — auto-logout on auth errors ──────────────────────────────────
+// Only force-logout on auth errors from mutations or explicit user-initiated queries.
+// Background polling queries (StockAlertBell, etc.) should NOT trigger logout —
+// they may fire briefly before the token is available after login navigation.
 
-const errorLink = onError(({ graphQLErrors, networkError }) => {
+const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
   if (graphQLErrors) {
     for (const err of graphQLErrors) {
       const msg = err.message.toLowerCase()
+      // Only hard-logout on auth errors from non-background operations
+      // Background polls are identified by their operation context or name
+      const opName = operation.operationName?.toLowerCase() ?? ''
+      const isBackgroundPoll = opName.includes('alert') || opName.includes('stock') || opName.includes('notification')
       if (
-        msg.includes('not authenticated') ||
-        msg.includes('invalid token') ||
-        msg.includes('jwt expired') ||
-        msg.includes('unauthorized')
+        !isBackgroundPoll &&
+        (
+          msg.includes('invalid token') ||
+          msg.includes('jwt expired') ||
+          msg.includes('jwt malformed')
+        )
       ) {
         localStorage.removeItem('token')
         localStorage.removeItem('user')
