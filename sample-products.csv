@@ -1,26 +1,26 @@
-Product Code,Product Name,Category,Unit,Quantity,Minimum Stock,Unit Cost (ETB),Supplier
-GOV-001,A4 Copy Paper 80gsm,Office Supplies,Ream,120,20,650,National Office Supplies
-GOV-002,Ballpoint Pen Blue,Stationery,Box,50,10,180,Addis Stationery Supplier
-GOV-003,Ballpoint Pen Black,Stationery,Box,45,10,180,Addis Stationery Supplier
-GOV-004,File Folder A4,Office Supplies,Piece,200,30,35,Government Office Supply
-GOV-005,Lever Arch File,Office Supplies,Piece,100,20,95,Government Office Supply
-GOV-006,Stapler Medium,Office Equipment,Piece,25,5,220,Addis Office Equipment
-GOV-007,Staples No.10,Stationery,Box,60,10,45,Addis Stationery Supplier
-GOV-008,Printer Toner HP 85A,IT & Printing,Piece,15,3,2800,Ethiopian ICT Supplier
-GOV-009,Printer Toner HP 12A,IT & Printing,Piece,12,3,3200,Ethiopian ICT Supplier
-GOV-010,USB Flash Drive 32GB,IT Equipment,Piece,30,5,450,Ethiopian ICT Supplier
-GOV-011,Computer Keyboard,IT Equipment,Piece,20,5,550,Ethiopian ICT Supplier
-GOV-012,Computer Mouse,IT Equipment,Piece,25,5,350,Ethiopian ICT Supplier
-GOV-013,HDMI Cable,IT Equipment,Piece,15,3,250,Ethiopian ICT Supplier
-GOV-014,Desk Calendar,Office Supplies,Piece,80,15,75,Government Office Supply
-GOV-015,Official Receipt Book,Official Documents,Book,100,20,60,Government Printing Supplier
-GOV-016,Payment Voucher Book,Official Documents,Book,80,15,65,Government Printing Supplier
-GOV-017,Purchase Request Form,Official Documents,Pad,100,20,45,Government Printing Supplier
-GOV-018,Attendance Register,Official Documents,Book,50,10,90,Government Printing Supplier
-GOV-019,Cleaning Detergent 1L,Cleaning Supplies,Bottle,40,10,120,General Supply Ethiopia
-GOV-020,Liquid Hand Soap 500ml,Cleaning Supplies,Bottle,60,15,85,General Supply Ethiopia
-GOV-021,Toilet Paper,Cleaning Supplies,Pack,100,20,95,General Supply Ethiopia
-GOV-022,Garbage Bag Large,Cleaning Supplies,Pack,80,15,130,General Supply Ethiopia
-GOV-023,Drinking Water 1L,Refreshments,Bottle,200,50,25,Local Water Supplier
-GOV-024,Coffee,Refreshments,Kg,30,5,450,Local Coffee Supplier
-GOV-025,Sugar,Refreshments,Kg,50,10,95,General Supply Ethiopia
+Product Code,Product Name,Category,Quantity,Minimum Stock,Unit Cost (ETB),Supplier
+GOV-001,A4 Copy Paper 80gsm,Office Supplies,120,20,650,National Office Supplies
+GOV-002,Ballpoint Pen Blue,Stationery,50,10,180,Addis Stationery Supplier
+GOV-003,Ballpoint Pen Black,Stationery,45,10,180,Addis Stationery Supplier
+GOV-004,File Folder A4,Office Supplies,200,30,35,Government Office Supply
+GOV-005,Lever Arch File,Office Supplies,100,20,95,Government Office Supply
+GOV-006,Stapler Medium,Office Equipment,25,5,220,Addis Office Equipment
+GOV-007,Staples No.10,Stationery,60,10,45,Addis Stationery Supplier
+GOV-008,Printer Toner HP 85A,IT Printing,15,3,2800,Ethiopian ICT Supplier
+GOV-009,Printer Toner HP 12A,IT Printing,12,3,3200,Ethiopian ICT Supplier
+GOV-010,USB Flash Drive 32GB,IT Equipment,30,5,450,Ethiopian ICT Supplier
+GOV-011,Computer Keyboard,IT Equipment,20,5,550,Ethiopian ICT Supplier
+GOV-012,Computer Mouse,IT Equipment,25,5,350,Ethiopian ICT Supplier
+GOV-013,HDMI Cable,IT Equipment,15,3,250,Ethiopian ICT Supplier
+GOV-014,Desk Calendar,Office Supplies,80,15,75,Government Office Supply
+GOV-015,Official Receipt Book,Official Documents,100,20,60,Government Printing Supplier
+GOV-016,Payment Voucher Book,Official Documents,80,15,65,Government Printing Supplier
+GOV-017,Purchase Request Form,Official Documents,100,20,45,Government Printing Supplier
+GOV-018,Attendance Register,Official Documents,50,10,90,Government Printing Supplier
+GOV-019,Cleaning Detergent 1L,Cleaning Supplies,40,10,120,General Supply Ethiopia
+GOV-020,Liquid Hand Soap 500ml,Cleaning Supplies,60,15,85,General Supply Ethiopia
+GOV-021,Toilet Paper,Cleaning Supplies,100,20,95,General Supply Ethiopia
+GOV-022,Garbage Bag Large,Cleaning Supplies,80,15,130,General Supply Ethiopia
+GOV-023,Drinking Water 1L,Refreshments,200,50,25,Local Water Supplier
+GOV-024,Coffee,Refreshments,30,5,450,Local Coffee Supplier
+GOV-025,Sugar,Refreshments,50,10,95,General Supply Ethiopia
