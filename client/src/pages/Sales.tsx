@@ -15,14 +15,14 @@ import { enqueueSale, isBrowserOnline, listPendingSales, markPendingFailed, remo
 
 const GET_SALES_DATA = gql`
   query GetSalesData {
-    sales {
-      id invoiceNo totalAmount subtotal vatAmount paymentMethod paymentStatus notes createdAt
+    sales(limit: 100) {
+      id invoiceNo totalAmount subtotal vatAmount paymentMethod paymentStatus status notes createdAt
       customer { id name email phone }
       user { name }
-      items { id quantity price product { name sku } }
+      items { id quantity price costPrice product { name sku } }
       returns { id refundAmount reason createdAt }
     }
-    products { id name sku barcode sellingPrice stock imageUrl }
+    products { id name sku barcode sellingPrice stock imageUrl costPrice }
     customers { id name phone currentDebt creditLimit }
   }
 `;
@@ -376,7 +376,7 @@ function POSModal({ open, onClose, products, customers, refetch, onCompleted }: 
       price: Math.round(i.price * factor * 100) / 100,
     }));
     const paymentAmount = paymentMethod === 'CREDIT' ? 0 : grandTotal;
-    const notes = discountPct > 0 ? `DISCOUNT:${discountPct}%` : null;
+    const notes = discountPct > 0 ? `DISCOUNT:${discountPct}% [discount:${discountAmt}]` : null;
     const idempotencyKey = crypto.randomUUID();
     const variables = {
       customerId: customerId || null,

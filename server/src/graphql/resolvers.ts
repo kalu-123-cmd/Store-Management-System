@@ -192,6 +192,7 @@ export const resolvers = {
       const c = await prisma.customer.findUnique({
         where: { id },
         include: {
+          creditAccount: true,   // required so creditLimit/currentBalance are available
           sales: {
             include: { items: { include: { product: true } } },
             orderBy: { createdAt: 'desc' },
@@ -493,10 +494,15 @@ export const resolvers = {
       return Object.entries(byDay).map(([date, v]) => ({ date, ...v }));
     },
 
-    salesByCategory: async (_: any, __: any, { prisma, user }: any) => {
+    salesByCategory: async (_: any, { startDate, endDate }: any, { prisma, user }: any) => {
       try {
         requireAuth(user);
+        const saleWhere: any = {};
+        if (startDate) saleWhere.createdAt = { gte: new Date(startDate) };
+        if (endDate)   saleWhere.createdAt = { ...(saleWhere.createdAt || {}), lte: new Date(endDate + 'T23:59:59') };
+
         const saleItems = await prisma.saleItem.findMany({
+          where: Object.keys(saleWhere).length > 0 ? { sale: saleWhere } : undefined,
           include: { product: { include: { category: true } } },
         });
 
@@ -4254,6 +4260,7 @@ export const resolvers = {
   // ── Field-level resolvers (DataLoader-powered, eliminates N+1) ────────────
 
   // Sale.user + Sale.customer — batch-load to avoid 1 query per sale
+  // Also computes derived `status` and `discountAmount` fields
   Sale: {
     user: (parent: any, _: any, { loaders }: any) => {
       if (parent.user) return parent.user;
@@ -4264,6 +4271,21 @@ export const resolvers = {
       if (parent.customer) return parent.customer;
       if (!parent.customerId) return null;
       return loaders.customerLoader.load(parent.customerId);
+    },
+    // Derived status: more meaningful than raw paymentStatus
+    status: (parent: any) => {
+      if (parent.paymentStatus === 'REFUNDED')           return 'REFUNDED';
+      if (parent.paymentStatus === 'PARTIALLY_REFUNDED') return 'PARTIALLY_REFUNDED';
+      if (parent.returns && parent.returns.length > 0)  return 'PARTIALLY_REFUNDED';
+      if (parent.paymentStatus === 'PARTIAL')            return 'PARTIAL';
+      if (parent.paymentStatus === 'CREDIT')             return 'CREDIT';
+      return 'COMPLETED';
+    },
+    // Extract discount amount embedded in sale notes as [discount:XX.XX]
+    discountAmount: (parent: any) => {
+      if (!parent.notes) return 0;
+      const match = (parent.notes as string).match(/\[discount:([\d.]+)\]/);
+      return match ? parseFloat(match[1]) : 0;
     },
   },
 

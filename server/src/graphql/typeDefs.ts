@@ -175,11 +175,14 @@ export const typeDefs = `#graphql
     returns: [SaleReturn!]!
     paymentMethod: String
     paymentStatus: String
+    # Derived status: COMPLETED | REFUNDED | PARTIALLY_REFUNDED | CANCELLED
+    status: String
     creditAmount: Float
     branchId: String
     notes: String
     cogsAmount: Float
     profitAmount: Float
+    discountAmount: Float
     createdAt: String!
   }
 
@@ -1297,7 +1300,7 @@ export const typeDefs = `#graphql
     lowStockProducts: [Product!]!
 
     monthlySalesByDay(year: Int, month: Int, startDate: String, endDate: String): [DailySales!]!
-    salesByCategory: [CategoryRevenue!]!
+    salesByCategory(startDate: String, endDate: String): [CategoryRevenue!]!
 
     getImportHistory: [ImportHistory]!
 

@@ -23,8 +23,12 @@ const GET_DASHBOARD_MAIN = gql`
       totalCustomers
       inventoryValue
       todaySales
+      yesterdaySales
+      weekSales
+      lastWeekSales
       monthlyRevenue
       monthlyProfit
+      lastMonthRevenue
       lowStockCount
       outOfStockCount
       totalStock
@@ -37,7 +41,7 @@ const GET_DASHBOARD_MAIN = gql`
       id name stock minStockLevel
       category { name }
     }
-    sales {
+    sales(limit: 10) {
       id invoiceNo totalAmount createdAt
       customer { id name }
     }
@@ -147,7 +151,7 @@ const actionColor: Record<string, string> = {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function KPICard({ title, value, icon, sub, color, delay, trend }: any) {
+function KPICard({ title, value, icon, sub, color, delay, trend, trendPositive }: any) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -160,8 +164,8 @@ function KPICard({ title, value, icon, sub, color, delay, trend }: any) {
           {icon}
         </div>
         {trend != null && (
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${trend >= 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'}`}>
-            {trend >= 0 ? '+' : ''}{trend}%
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${trendPositive !== false ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'}`}>
+            {trend}
           </span>
         )}
       </div>
@@ -226,25 +230,43 @@ export default function Dashboard() {
         </button>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title={t('revenue')}        value={fmt(stats?.monthlyRevenue || 0)}   icon={<DollarSign size={20} className="text-primary" />}        color="bg-primary/10"   delay={0} />
-        <KPICard title={t('profit')}          value={fmt(stats?.monthlyProfit || 0)}    icon={<TrendingUp size={20} className="text-emerald-500" />}    color="bg-emerald-500/10" delay={0.07} />
-        <KPICard title={t('products')}        value={stats?.totalProducts || 0}          icon={<Package size={20} className="text-violet-500" />}        color="bg-violet-500/10" delay={0.14} sub={stats?.lowStockCount ? `${stats.lowStockCount} ${t('lowStock')}` : undefined} />
-        <KPICard title={t('customers')}       value={stats?.totalCustomers || 0}         icon={<Users size={20} className="text-amber-500" />}           color="bg-amber-500/10" delay={0.21} />
+        {/* Helper to compute pct change */}
+        {(() => {
+          const _todayTrend  = stats?.yesterdaySales  > 0 ? (((stats.todaySales  - stats.yesterdaySales)  / stats.yesterdaySales)  * 100).toFixed(1) : null;
+          const _weekTrend   = stats?.lastWeekSales   > 0 ? (((stats.weekSales   - stats.lastWeekSales)   / stats.lastWeekSales)   * 100).toFixed(1) : null;
+          const monthTrend  = stats?.lastMonthRevenue > 0 ? (((stats.monthlyRevenue - stats.lastMonthRevenue) / stats.lastMonthRevenue) * 100).toFixed(1) : null;
+          return (
+            <>
+              <KPICard title={t('revenue')}       value={fmt(stats?.monthlyRevenue || 0)}   icon={<DollarSign size={20} className="text-primary" />}        color="bg-primary/10"    delay={0}    trend={monthTrend ? `${Number(monthTrend) >= 0 ? '↑' : '↓'} ${Math.abs(Number(monthTrend))}% vs last month` : undefined} trendPositive={Number(monthTrend) >= 0} />
+              <KPICard title={t('profit')}         value={fmt(stats?.monthlyProfit || 0)}    icon={<TrendingUp size={20} className="text-emerald-500" />}    color="bg-emerald-500/10" delay={0.07} />
+              <KPICard title={t('products')}       value={stats?.totalProducts || 0}          icon={<Package size={20} className="text-violet-500" />}        color="bg-violet-500/10" delay={0.14} sub={stats?.lowStockCount ? `${stats.lowStockCount} ${t('lowStock')}` : undefined} />
+              <KPICard title={t('customers')}      value={stats?.totalCustomers || 0}         icon={<Users size={20} className="text-amber-500" />}           color="bg-amber-500/10"  delay={0.21} />
+            </>
+          );
+        })()}
       </div>
 
       {/* ── KPI Row 2 ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title={t('todaySales')}      value={fmt(stats?.todaySales || 0)}       icon={<ShoppingCart size={20} className="text-sky-500" />}      color="bg-sky-500/10"   delay={0.28} />
-        <KPICard title={t('inventoryValue')}  value={fmtInt(stats?.inventoryValue || 0)} icon={<BarChart2 size={20} className="text-indigo-500" />}      color="bg-indigo-500/10" delay={0.35} />
-        <KPICard title={t('outOfStock')}      value={stats?.outOfStockCount || 0}        icon={<AlertTriangle size={20} className="text-destructive" />} color="bg-destructive/10" delay={0.42} />
-        <KPICard title={t('categories')}      value={stats?.totalCategories || 0}        icon={<Layers size={20} className="text-orange-500" />}         color="bg-orange-500/10" delay={0.49} />
+        {(() => {
+          const todayTrend = stats?.yesterdaySales > 0 ? (((stats.todaySales - stats.yesterdaySales) / stats.yesterdaySales) * 100).toFixed(1) : null;
+          const weekTrend  = stats?.lastWeekSales  > 0 ? (((stats.weekSales  - stats.lastWeekSales)  / stats.lastWeekSales)  * 100).toFixed(1) : null;
+          return (
+            <>
+              <KPICard title={t('todaySales')}     value={fmt(stats?.todaySales || 0)}        icon={<ShoppingCart size={20} className="text-sky-500" />}      color="bg-sky-500/10"    delay={0.28} trend={todayTrend ? `${Number(todayTrend) >= 0 ? '↑' : '↓'} ${Math.abs(Number(todayTrend))}% vs yesterday` : undefined} trendPositive={Number(todayTrend) >= 0} />
+              <KPICard title="This week"           value={fmt(stats?.weekSales || 0)}          icon={<BarChart2 size={20} className="text-indigo-500" />}      color="bg-indigo-500/10" delay={0.35} trend={weekTrend ? `${Number(weekTrend) >= 0 ? '↑' : '↓'} ${Math.abs(Number(weekTrend))}% vs last week` : undefined} trendPositive={Number(weekTrend) >= 0} />
+              <KPICard title={t('inventoryValue')} value={fmtInt(stats?.inventoryValue || 0)} icon={<Layers size={20} className="text-orange-500" />}         color="bg-orange-500/10" delay={0.42} />
+              <KPICard title={t('outOfStock')}     value={stats?.outOfStockCount || 0}         icon={<AlertTriangle size={20} className="text-destructive" />} color="bg-destructive/10" delay={0.49} />
+            </>
+          );
+        })()}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="Expiring lots" value={stats?.expiringCount || 0} icon={<AlertTriangle size={20} className="text-amber-500" />} color="bg-amber-500/10" delay={0.5} />
-        <KPICard title="Open POs" value={stats?.pendingPurchases || 0} icon={<ShoppingCart size={20} className="text-sky-500" />} color="bg-sky-500/10" delay={0.52} />
-        <KPICard title="Receivables" value={fmt(stats?.outstandingReceivables || 0)} icon={<DollarSign size={20} className="text-emerald-500" />} color="bg-emerald-500/10" delay={0.54} />
-        <KPICard title="Payables" value={fmt(stats?.outstandingPayables || 0)} icon={<DollarSign size={20} className="text-violet-500" />} color="bg-violet-500/10" delay={0.56} />
+        <KPICard title="Expiring soon"   value={stats?.expiringCount       || 0}  icon={<AlertTriangle size={20} className="text-amber-500" />}  color="bg-amber-500/10"   delay={0.5}  />
+        <KPICard title="Open POs"        value={stats?.pendingPurchases     || 0}  icon={<ShoppingCart  size={20} className="text-sky-500" />}    color="bg-sky-500/10"     delay={0.52} />
+        <KPICard title="Receivables"     value={fmt(stats?.outstandingReceivables || 0)} icon={<DollarSign size={20} className="text-emerald-500" />} color="bg-emerald-500/10" delay={0.54} />
+        <KPICard title="Payables"        value={fmt(stats?.outstandingPayables    || 0)} icon={<DollarSign size={20} className="text-violet-500"  />} color="bg-violet-500/10"  delay={0.56} />
       </div>
 
       {/* ── Charts Row ── */}

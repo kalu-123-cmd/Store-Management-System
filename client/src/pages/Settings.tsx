@@ -68,15 +68,19 @@ export default function Settings() {
 
   // Store info (stored in localStorage — no backend needed)
   const [storeName, setStoreName]   = useState(() => localStorage.getItem('store-name') || 'StoreOS');
-  const [storeCurrency, setStoreCurrency] = useState(() => localStorage.getItem('store-currency') || 'ETB');
-  const [storePhone, setStorePhone] = useState(() => localStorage.getItem('store-phone') || '');
-  const [storeAddress, setStoreAddress] = useState(() => localStorage.getItem('store-address') || '');
+  const [storeCurrency, setStoreCurrency] = useState(() => localStorage.getItem('storeos-currency') || 'ETB');
+  const [vatRate, setVatRate] = useState(() => localStorage.getItem('storeos-vat-rate') || '15');
+  const [storePhone, setStorePhone]       = useState(() => localStorage.getItem('store-phone')       || '');
+  const [storeAddress, setStoreAddress]   = useState(() => localStorage.getItem('store-address')     || '');
 
   const saveStoreInfo = () => {
-    localStorage.setItem('store-name', storeName);
-    localStorage.setItem('store-currency', storeCurrency);
-    localStorage.setItem('store-phone', storePhone);
-    localStorage.setItem('store-address', storeAddress);
+    localStorage.setItem('store-name',       storeName);
+    localStorage.setItem('storeos-currency', storeCurrency);
+    localStorage.setItem('storeos-vat-rate', vatRate);
+    localStorage.setItem('store-phone',      storePhone);
+    localStorage.setItem('store-address',    storeAddress);
+    // Also keep old key for backward compat
+    localStorage.setItem('store-currency',   storeCurrency);
     success('Settings saved', 'Store information updated.');
   };
 
@@ -191,9 +195,20 @@ export default function Settings() {
                 </select>
               </div>
               <div>
-                <label className="text-sm font-medium block mb-1">Phone</label>
-                <input value={storePhone} onChange={e => setStorePhone(e.target.value)} placeholder="+251-911-..." className={ic} />
+                <label className="text-sm font-medium block mb-1">VAT Rate (%)</label>
+                <input
+                  type="number" min={0} max={100} step={0.5}
+                  value={vatRate}
+                  onChange={e => setVatRate(e.target.value)}
+                  placeholder="15"
+                  className={ic}
+                />
+                <p className="text-xs text-muted-foreground mt-0.5">Default: 15% (Ethiopian standard)</p>
               </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Phone</label>
+              <input value={storePhone} onChange={e => setStorePhone(e.target.value)} placeholder="+251-911-..." className={ic} />
             </div>
             <div>
               <label className="text-sm font-medium block mb-1">Address</label>

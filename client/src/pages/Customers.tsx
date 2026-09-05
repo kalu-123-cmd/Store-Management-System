@@ -133,6 +133,7 @@ function CustomerModal({ open, onClose, refetch, editCustomer }: any) {
 function HistoryDrawer({ customerId, onClose }: { customerId: string; onClose: () => void }) {
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
   const [payAmt, setPayAmt] = useState('');
+  const [payMethod, setPayMethod] = useState('CASH');
   const [limitAmt, setLimitAmt] = useState('');
   const { data, loading, refetch } = useQuery(GET_CUSTOMER_HISTORY, {
     variables: { id: customerId },
@@ -241,14 +242,20 @@ function HistoryDrawer({ customerId, onClose }: { customerId: string; onClose: (
               }} className="px-3 py-1.5 bg-muted rounded text-xs font-medium">Save limit</button>
             </div>
             <div className="flex gap-2">
-              <input type="number" min={0} value={payAmt} onChange={e => setPayAmt(e.target.value)} placeholder="Payment amount"
+              <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
+                className="px-2 py-1.5 bg-background border border-border rounded text-xs">
+                {['CASH','TELEBIRR','CBE_BIRR','BANK_TRANSFER','CARD'].map(m => (
+                  <option key={m} value={m}>{m.replace('_',' ')}</option>
+                ))}
+              </select>
+              <input type="number" min={0} value={payAmt} onChange={e => setPayAmt(e.target.value)} placeholder="Amount"
                 className="flex-1 px-2 py-1.5 bg-background border border-border rounded text-sm" />
               <button onClick={async () => {
                 try {
-                  await recordPay({ variables: { customerId, amount: Number(payAmt), paymentMethod: 'CASH' } });
+                  await recordPay({ variables: { customerId, amount: Number(payAmt), paymentMethod: payMethod } });
                   success('Payment recorded'); setPayAmt(''); refetch();
                 } catch (e: any) { toastError('Failed', e.message); }
-              }} className="px-3 py-1.5 bg-primary text-primary-foreground rounded text-xs font-medium">Record pay</button>
+              }} className="px-3 py-1.5 bg-primary text-primary-foreground rounded text-xs font-medium">Record</button>
             </div>
             {ledger.length > 0 && (
               <ul className="max-h-28 overflow-y-auto text-xs space-y-1">

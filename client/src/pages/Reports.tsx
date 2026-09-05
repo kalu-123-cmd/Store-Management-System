@@ -25,7 +25,7 @@ const GET_REPORTS = gql`
       category { name }
       saleItems { quantity price }
     }
-    salesByCategory { category totalSales totalRevenue }
+    salesByCategory(startDate: $startDate, endDate: $endDate) { category totalSales totalRevenue }
     monthlySalesByDay(startDate: $startDate, endDate: $endDate) { date revenue profit count }
   }
 `;
